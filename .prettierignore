@@ -1,0 +1,10 @@
+node_modules
+.npm-cache
+.next
+out
+build
+dist
+coverage
+logs
+package-lock.json
+next-env.d.ts
