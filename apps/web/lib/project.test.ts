@@ -8,6 +8,7 @@ import {
   MIN_FONT_SIZE,
   nextUntitledName,
   normalizeFileName,
+  projectFilesFromRecord,
   removeFile,
   renameFile,
   resolveActiveFile,
@@ -155,5 +156,45 @@ describe("clampFontSize", () => {
 
   it("falls back to the default for a non-finite value", () => {
     expect(clampFontSize(Number.NaN)).toBe(DEFAULT_FONT_SIZE);
+  });
+});
+
+describe("projectFilesFromRecord", () => {
+  it("rebuilds the file list", () => {
+    const project = projectFilesFromRecord({ "main.py": "a", "helper.py": "b" }, "main.py");
+    expect(project.files).toEqual([
+      { name: "main.py", content: "a" },
+      { name: "helper.py", content: "b" },
+    ]);
+  });
+
+  it("puts the entry file first, then sorts the rest", () => {
+    const project = projectFilesFromRecord(
+      { "zeta.py": "", "alpha.py": "", "main.py": "", "middle.py": "" },
+      "main.py",
+    );
+    expect(project.files.map((file) => file.name)).toEqual([
+      "main.py",
+      "alpha.py",
+      "middle.py",
+      "zeta.py",
+    ]);
+    expect(project.activeFile).toBe("main.py");
+  });
+
+  it("falls back to the first name when the entry file is absent", () => {
+    const project = projectFilesFromRecord({ "beta.py": "", "alpha.py": "" }, "gone.py");
+    expect(project.files.map((file) => file.name)).toEqual(["alpha.py", "beta.py"]);
+    expect(project.activeFile).toBe("alpha.py");
+  });
+
+  it("preserves content exactly, including newlines", () => {
+    const content = "# comment\n\nx = 1\n";
+    const project = projectFilesFromRecord({ "main.py": content }, "main.py");
+    expect(project.files[0]?.content).toBe(content);
+  });
+
+  it("returns an empty project for an empty record", () => {
+    expect(projectFilesFromRecord({}, "main.py")).toEqual({ files: [], activeFile: "" });
   });
 });

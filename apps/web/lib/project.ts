@@ -112,6 +112,26 @@ export function resolveActiveFile(files: readonly ProjectFile[], active: string)
   return files[0]?.name ?? "";
 }
 
+/**
+ * Rebuild a project's file list from a stored share.
+ *
+ * Postgres `jsonb` does not preserve key order, so tab order is rebuilt
+ * deterministically rather than relying on the order the files were saved in:
+ * the entry file first, then the rest alphabetically.
+ */
+export function projectFilesFromRecord(
+  files: Record<string, string>,
+  entryFile: string,
+): { files: ProjectFile[]; activeFile: string } {
+  const names = Object.keys(files).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const ordered = names.includes(entryFile)
+    ? [entryFile, ...names.filter((name) => name !== entryFile)]
+    : names;
+
+  const projectFiles = ordered.map((name) => ({ name, content: files[name] ?? "" }));
+  return { files: projectFiles, activeFile: projectFiles[0]?.name ?? "" };
+}
+
 export function clampFontSize(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_FONT_SIZE;
   return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(value)));

@@ -1,6 +1,6 @@
 {
   "name": "snapjaw",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A Trinket-style online Python editor with real sandboxed execution. Write code, run it, share the link.",
   "license": "MIT",
@@ -19,6 +19,9 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace @snapjaw/web",
+    "db:migrate": "npm run db:migrate --workspace @snapjaw/web",
+    "db:push": "npm run db:push --workspace @snapjaw/web",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

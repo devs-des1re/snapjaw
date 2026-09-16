@@ -15,7 +15,7 @@ export interface TopMenuBarProps {
   onRun: () => void;
   onShare: () => void;
   isRunning: boolean;
-  notice: string | null;
+  isSharing: boolean;
 }
 
 export function TopMenuBar({
@@ -24,7 +24,7 @@ export function TopMenuBar({
   onRun,
   onShare,
   isRunning,
-  notice,
+  isSharing,
 }: TopMenuBarProps) {
   const wordmark = (
     <Link
@@ -38,21 +38,17 @@ export function TopMenuBar({
 
   return (
     <Menubar wordmark={wordmark}>
-      {notice ? (
-        <p
-          role="status"
-          title={notice}
-          className="hidden max-w-72 truncate text-2xs text-fg-muted lg:block"
-        >
-          {notice}
-        </p>
-      ) : null}
-
       <FontSizeControl value={fontSize} onChange={onFontSizeChange} />
 
-      <Button variant="secondary" aria-label="Share files" onClick={onShare}>
+      <Button
+        variant="secondary"
+        aria-label="Share files"
+        aria-busy={isSharing}
+        disabled={isSharing}
+        onClick={onShare}
+      >
         <Icon icon={shareIcon} aria-hidden="true" className="size-3.5" />
-        <span className="hidden sm:inline">Share</span>
+        <span className="hidden sm:inline">{isSharing ? "Sharing" : "Share"}</span>
       </Button>
 
       <Button
