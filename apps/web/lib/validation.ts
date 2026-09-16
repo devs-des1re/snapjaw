@@ -49,3 +49,28 @@ export const createSharedFileSchema = z
 export type CreateSharedFileInput = z.infer<typeof createSharedFileSchema>;
 
 export const sharedFileIdSchema = z.uuid("That is not a valid shared file id.");
+
+/** POST /api/run — the same project shape, minus anything about persistence. */
+export const runRequestSchema = z
+  .object({
+    files: sharedFilesSchema,
+    entryFile: z.string().min(1, "An entry file is required."),
+  })
+  .refine((value) => Object.hasOwn(value.files, value.entryFile), {
+    message: "The entry file must be one of the project's files.",
+    path: ["entryFile"],
+  });
+
+export type RunRequestInput = z.infer<typeof runRequestSchema>;
+
+/** What the sandbox runner is expected to hand back. */
+export const runnerRunResultSchema = z.object({
+  entryFile: z.string(),
+  stdout: z.string(),
+  stderr: z.string(),
+  exitCode: z.number().int(),
+  durationMs: z.number(),
+  timedOut: z.boolean(),
+  image: z.string().nullable(),
+  hadDisplay: z.boolean().optional(),
+});

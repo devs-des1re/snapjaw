@@ -1,3 +1,4 @@
+import { readApiError } from "@/lib/api/client";
 import type { ProjectFile } from "@/lib/project";
 
 export interface RunResult {
@@ -12,49 +13,74 @@ export interface RunResult {
   timedOut: boolean;
 }
 
-const MOCK_LATENCY_MS = 420;
+export type RunOutcome = { ok: true; result: RunResult } | { ok: false; message: string };
 
-/**
- * Phase 1 placeholder for `/api/run`.
- *
- * Nothing is executed. Phase 3 replaces the body of this function with a POST
- * to the sandbox runner and leaves the `RunResult` contract untouched, so the
- * output panel needs no changes.
- */
-export async function mockRun(
-  files: readonly ProjectFile[],
-  entryFile: string,
-): Promise<RunResult> {
-  const startedAt = Date.now();
-  await new Promise((resolve) => setTimeout(resolve, MOCK_LATENCY_MS));
+export function projectToFileRecord(files: readonly ProjectFile[]): Record<string, string> {
+  return Object.fromEntries(files.map((file) => [file.name, file.content]));
+}
 
-  const entry = files.find((file) => file.name === entryFile);
-  const lines = entry ? entry.content.split("\n").length : 0;
-  const firstLine = entry?.content.split("\n")[0]?.trim() ?? "";
-  const fileList = files.map((file) => file.name).join(", ");
+function readRunResult(payload: unknown): RunResult | null {
+  if (typeof payload !== "object" || payload === null) return null;
 
-  const stdout = [
-    `$ python ${entryFile}`,
-    "",
-    "Snapjaw preview build — nothing was executed.",
-    "",
-    `  entry : ${entryFile}`,
-    `  lines : ${lines}`,
-    `  first : ${firstLine}`,
-    `  files : ${fileList}`,
-    "",
-    "Real sandboxed execution, turtle and tkinter included, arrives with the",
-    "sandbox runner in the next build.",
-    "",
-  ].join("\n");
+  const candidate = payload as Partial<RunResult>;
+  if (
+    typeof candidate.entryFile !== "string" ||
+    typeof candidate.stdout !== "string" ||
+    typeof candidate.stderr !== "string" ||
+    typeof candidate.exitCode !== "number" ||
+    typeof candidate.durationMs !== "number" ||
+    typeof candidate.timedOut !== "boolean"
+  ) {
+    return null;
+  }
 
   return {
-    entryFile,
-    stdout,
-    stderr: "",
-    exitCode: 0,
-    durationMs: Date.now() - startedAt,
-    image: null,
-    timedOut: false,
+    entryFile: candidate.entryFile,
+    stdout: candidate.stdout,
+    stderr: candidate.stderr,
+    exitCode: candidate.exitCode,
+    durationMs: candidate.durationMs,
+    image: typeof candidate.image === "string" ? candidate.image : null,
+    timedOut: candidate.timedOut,
   };
+}
+
+/**
+ * Run a project in the sandbox and return its output.
+ *
+ * Failure is reported as a value rather than a thrown error so the caller can
+ * render it in the output panel next to the program's own output.
+ */
+export async function runProject(
+  files: readonly ProjectFile[],
+  entryFile: string,
+): Promise<RunOutcome> {
+  try {
+    const response = await fetch("/api/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ files: projectToFileRecord(files), entryFile }),
+    });
+
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: readApiError(payload) ?? `The sandbox returned status ${response.status}.`,
+      };
+    }
+
+    const result = readRunResult(payload);
+    if (!result) {
+      return { ok: false, message: "The sandbox returned an unexpected response." };
+    }
+
+    return { ok: true, result };
+  } catch {
+    return {
+      ok: false,
+      message: "Could not reach Snapjaw. Check your connection and try again.",
+    };
+  }
 }

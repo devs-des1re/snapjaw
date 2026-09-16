@@ -13,6 +13,7 @@ import { OutputPanel } from "@/components/blocks/output-panel";
 import { ShareBar, type ShareState } from "@/components/blocks/share-bar";
 import { TopMenuBar } from "@/components/blocks/top-menu-bar";
 import { readApiError, readSharedUrl } from "@/lib/api/client";
+import { cn } from "@/lib/cn";
 import {
   checkFileName,
   clampFontSize,
@@ -23,7 +24,7 @@ import {
   updateFileContent,
   type ProjectFile,
 } from "@/lib/project";
-import { mockRun, type RunResult } from "@/lib/run";
+import { runProject, type RunResult } from "@/lib/run";
 
 /**
  * Monaco only exists in the browser, so the editor is loaded on the client.
@@ -63,12 +64,17 @@ export function EditorWorkspace({
   const [activeFile, setActiveFile] = useState<string>(initialActiveFile);
   const [fontSize, setFontSize] = useState<number>(initialFontSize);
   const [result, setResult] = useState<RunResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [share, setShare] = useState<ShareState>({ status: "idle" });
 
   const active = files.find((file) => file.name === activeFile) ?? files[0] ?? NO_FILE;
+
+  // A captured turtle/tkinter window needs the room to be legible, so the
+  // output panel grows when there is one to show.
+  const hasImage = result?.image != null;
 
   const handleSelect = useCallback((name: string) => {
     setActiveFile(name);
@@ -149,8 +155,15 @@ export function EditorWorkspace({
   const handleRun = useCallback(async () => {
     if (isRunning) return;
     setIsRunning(true);
+    setRunError(null);
     try {
-      setResult(await mockRun(files, active.name));
+      const outcome = await runProject(files, active.name);
+      if (outcome.ok) {
+        setResult(outcome.result);
+      } else {
+        setResult(null);
+        setRunError(outcome.message);
+      }
     } finally {
       setIsRunning(false);
     }
@@ -246,8 +259,18 @@ export function EditorWorkspace({
           </div>
         </div>
 
-        <div className="h-[38%] max-h-80 min-h-36 shrink-0">
-          <OutputPanel result={result} isRunning={isRunning} entryFile={active.name} />
+        <div
+          className={cn(
+            "shrink-0",
+            hasImage ? "h-[52%] max-h-[30rem] min-h-52" : "h-[38%] max-h-80 min-h-36",
+          )}
+        >
+          <OutputPanel
+            result={result}
+            isRunning={isRunning}
+            entryFile={active.name}
+            error={runError}
+          />
         </div>
       </main>
     </div>

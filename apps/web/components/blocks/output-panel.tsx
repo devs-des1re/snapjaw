@@ -9,22 +9,31 @@ export interface OutputPanelProps {
   result: RunResult | null;
   isRunning: boolean;
   entryFile: string;
+  /** A failure to reach or use the sandbox, as opposed to the program failing. */
+  error?: string | null;
 }
 
-function statusLine(result: RunResult | null, isRunning: boolean, entryFile: string): string {
+function statusLine(
+  result: RunResult | null,
+  isRunning: boolean,
+  entryFile: string,
+  error?: string | null,
+): string {
   if (isRunning) return `running ${entryFile}`;
+  if (error) return "run failed";
 
   if (result) {
     const parts: string[] = [];
     if (result.timedOut) parts.push("timed out");
     parts.push(`exit ${result.exitCode}`, `${result.durationMs} ms`);
+    parts.push(result.image ? "with display" : "console");
     return parts.join(" · ");
   }
 
   return "idle";
 }
 
-export function OutputPanel({ result, isRunning, entryFile }: OutputPanelProps) {
+export function OutputPanel({ result, isRunning, entryFile, error }: OutputPanelProps) {
   return (
     <section aria-label="Program output" className="flex h-full min-h-0 flex-col bg-canvas">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
@@ -34,20 +43,28 @@ export function OutputPanel({ result, isRunning, entryFile }: OutputPanelProps) 
           aria-live="polite"
           className="ml-auto truncate font-mono text-2xs text-fg-subtle tabular-nums"
         >
-          {statusLine(result, isRunning, entryFile)}
+          {statusLine(result, isRunning, entryFile, error)}
         </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <OutputBody result={result} isRunning={isRunning} entryFile={entryFile} />
+        <OutputBody result={result} isRunning={isRunning} entryFile={entryFile} error={error} />
       </div>
     </section>
   );
 }
 
-function OutputBody({ result, isRunning, entryFile }: OutputPanelProps) {
+function OutputBody({ result, isRunning, entryFile, error }: OutputPanelProps) {
   if (isRunning) {
     return <p className="p-3 font-mono text-sm text-fg-muted">Running {entryFile}…</p>;
+  }
+
+  if (error) {
+    return (
+      <p role="alert" className="p-3 font-mono text-sm break-words whitespace-pre-wrap text-danger">
+        {error}
+      </p>
+    );
   }
 
   if (!result) {
@@ -58,21 +75,37 @@ function OutputBody({ result, isRunning, entryFile }: OutputPanelProps) {
 
   const isEmpty = !result.stdout && !result.stderr && !result.image;
 
-  return (
-    <div className="space-y-3 p-3">
-      {result.image ? (
-        <figure>
+  if (result.image) {
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-3 p-3">
+        <figure className="flex min-h-0 flex-1 flex-col gap-1.5">
           {/* A data URL produced by the sandbox, so next/image does not apply. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={result.image}
             alt="Window captured from the program's virtual display"
-            className="max-w-full rounded-md border border-line"
+            className="min-h-0 w-auto max-w-full flex-1 self-start rounded-md border border-line object-contain"
           />
-          <figcaption className="mt-1.5 text-2xs text-fg-subtle">Captured display</figcaption>
+          <figcaption className="shrink-0 text-2xs text-fg-subtle">Captured display</figcaption>
         </figure>
-      ) : null}
 
+        {result.stdout ? (
+          <pre className="shrink-0 font-mono text-sm break-words whitespace-pre-wrap text-fg">
+            {result.stdout}
+          </pre>
+        ) : null}
+
+        {result.stderr ? (
+          <pre className="shrink-0 font-mono text-sm break-words whitespace-pre-wrap text-danger">
+            {result.stderr}
+          </pre>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 p-3">
       {result.stdout ? (
         <pre className="font-mono text-sm break-words whitespace-pre-wrap text-fg">
           {result.stdout}

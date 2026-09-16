@@ -8,14 +8,24 @@ import { APP_VERSION } from "@/lib/version";
  */
 
 export type ApiErrorCode =
-  "BAD_REQUEST" | "VALIDATION_ERROR" | "NOT_FOUND" | "PAYLOAD_TOO_LARGE" | "INTERNAL_ERROR";
+  | "BAD_REQUEST"
+  | "VALIDATION_ERROR"
+  | "NOT_FOUND"
+  | "PAYLOAD_TOO_LARGE"
+  | "RATE_LIMITED"
+  | "INTERNAL_ERROR"
+  | "BAD_GATEWAY"
+  | "SERVICE_UNAVAILABLE";
 
 const STATUS_FOR_CODE: Record<ApiErrorCode, number> = {
   BAD_REQUEST: 400,
   VALIDATION_ERROR: 400,
   NOT_FOUND: 404,
   PAYLOAD_TOO_LARGE: 413,
+  RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
 };
 
 export interface ApiMeta {
@@ -46,10 +56,11 @@ export function jsonError(
   message: string,
   details?: string[],
   status = STATUS_FOR_CODE[code],
+  headers?: Record<string, string>,
 ): Response {
   const body: ApiErrorBody = {
     error: { code, message, ...(details && details.length > 0 ? { details } : {}) },
     ...apiMeta(),
   };
-  return Response.json(body, { status });
+  return Response.json(body, { status, ...(headers ? { headers } : {}) });
 }

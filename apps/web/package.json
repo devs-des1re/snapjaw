@@ -1,6 +1,6 @@
 {
   "name": "@snapjaw/web",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Snapjaw web app — editor UI, sharing API, and orchestration of the sandbox runner.",
   "license": "MIT",
@@ -20,6 +20,8 @@
     "@iconify-icons/lucide": "^2.0.9",
     "@iconify/react": "^6.0.2",
     "@monaco-editor/react": "^4.7.0",
+    "@upstash/ratelimit": "^2.1.0",
+    "@upstash/redis": "^1.38.4",
     "drizzle-orm": "^0.45.2",
     "monaco-editor": "^0.56.0",
     "next": "16.3.5",

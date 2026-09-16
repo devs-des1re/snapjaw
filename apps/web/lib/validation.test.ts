@@ -4,6 +4,8 @@ import {
   MAX_FILE_CHARACTERS,
   MAX_SHARED_FILES,
   createSharedFileSchema,
+  runRequestSchema,
+  runnerRunResultSchema,
   sharedFileIdSchema,
 } from "./validation";
 
@@ -133,5 +135,85 @@ describe("sharedFileIdSchema", () => {
 
   it.each([["not-a-uuid"], [""], ["123"], ["../../etc/passwd"]])("rejects %j", (candidate) => {
     expect(sharedFileIdSchema.safeParse(candidate).success).toBe(false);
+  });
+});
+
+describe("runRequestSchema", () => {
+  it("accepts a project and its entry file", () => {
+    expect(
+      runRequestSchema.safeParse({ files: { "main.py": "print(1)" }, entryFile: "main.py" })
+        .success,
+    ).toBe(true);
+  });
+
+  it("does not accept a font size, which running does not need", () => {
+    const result = runRequestSchema.parse({
+      files: { "main.py": "" },
+      entryFile: "main.py",
+      fontSize: 22,
+    });
+    expect(result).not.toHaveProperty("fontSize");
+  });
+
+  it("rejects an entry file that is not in the project", () => {
+    expect(runRequestSchema.safeParse({ files: { "a.py": "" }, entryFile: "b.py" }).success).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ["", "an empty project"],
+    [undefined, "a missing project"],
+  ])("rejects %j (%s)", (files, _description) => {
+    expect(runRequestSchema.safeParse({ files, entryFile: "main.py" }).success).toBe(false);
+  });
+
+  it("rejects a traversal attempt in a file name", () => {
+    expect(
+      runRequestSchema.safeParse({ files: { "../escape.py": "" }, entryFile: "../escape.py" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("rejects a project larger than the shared limit", () => {
+    const files: Record<string, string> = {};
+    for (let index = 0; index <= MAX_SHARED_FILES; index += 1) files[`f${index}.py`] = "";
+    expect(runRequestSchema.safeParse({ files, entryFile: "f0.py" }).success).toBe(false);
+  });
+});
+
+describe("runnerRunResultSchema", () => {
+  const VALID = {
+    entryFile: "main.py",
+    stdout: "hi\n",
+    stderr: "",
+    exitCode: 0,
+    durationMs: 42,
+    timedOut: false,
+    image: null,
+  };
+
+  it("accepts a console result", () => {
+    expect(runnerRunResultSchema.safeParse(VALID).success).toBe(true);
+  });
+
+  it("accepts a captured display", () => {
+    expect(
+      runnerRunResultSchema.safeParse({ ...VALID, image: "data:image/png;base64,AAAA" }).success,
+    ).toBe(true);
+  });
+
+  it("tolerates the runner's extra display flag", () => {
+    const result = runnerRunResultSchema.safeParse({ ...VALID, hadDisplay: true });
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    [{ ...VALID, stdout: undefined }, "a missing stdout"],
+    [{ ...VALID, exitCode: "0" }, "a string exit code"],
+    [{ ...VALID, timedOut: "no" }, "a non-boolean timeout flag"],
+    [{ ...VALID, image: undefined }, "a missing image field"],
+  ])("rejects %j (%s)", (payload, _description) => {
+    expect(runnerRunResultSchema.safeParse(payload).success).toBe(false);
   });
 });
