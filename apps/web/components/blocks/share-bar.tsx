@@ -75,7 +75,7 @@ export function ShareBar({ state, onDismiss }: ShareBarProps) {
       className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-2 py-1.5 sm:px-3"
     >
       {state.status === "sharing" ? (
-        <p role="status" className="p-0.5 font-mono text-2xs text-fg-muted">
+        <p role="status" className="p-0.5 text-2xs text-fg-muted">
           Creating link…
         </p>
       ) : null}
@@ -110,7 +110,7 @@ export function ShareBar({ state, onDismiss }: ShareBarProps) {
             readOnly
             value={state.url}
             onFocus={(event) => event.currentTarget.select()}
-            className="min-w-0 flex-1 rounded-sm border border-line-strong bg-surface px-2 py-1 font-mono text-xs text-fg outline-none focus:border-accent"
+            className="min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-xs text-fg outline-none focus:border-focus"
           />
 
           <Button

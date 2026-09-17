@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import {
@@ -11,9 +11,9 @@ import {
 } from "@/components/blocks/file-tabs";
 import { OutputPanel } from "@/components/blocks/output-panel";
 import { ShareBar, type ShareState } from "@/components/blocks/share-bar";
+import { SplitPane } from "@/components/blocks/split-pane";
 import { TopMenuBar } from "@/components/blocks/top-menu-bar";
 import { readApiError, readSharedUrl } from "@/lib/api/client";
-import { cn } from "@/lib/cn";
 import {
   checkFileName,
   clampFontSize,
@@ -32,7 +32,7 @@ const EditorPanel = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full items-center justify-center font-mono text-sm text-fg-subtle">
+      <div className="flex h-full items-center justify-center text-sm text-fg-subtle">
         Loading editor…
       </div>
     ),
@@ -71,8 +71,30 @@ export function EditorWorkspace({
 
   const active = files.find((file) => file.name === activeFile) ?? files[0] ?? NO_FILE;
 
-  // A captured display needs the room to be legible, live or final.
-  const hasImage = result?.image != null || frameCount > 0;
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+
+  // Ctrl or Cmd plus wheel resizes the editor font, the way every editor does it.
+  useEffect(() => {
+    const pane = editorPaneRef.current;
+    if (!pane) return;
+
+    let travelled = 0;
+
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+
+      travelled += event.deltaY;
+      const steps = Math.trunc(travelled / 40);
+      if (steps === 0) return;
+
+      travelled -= steps * 40;
+      setFontSize((current) => clampFontSize(current - steps));
+    };
+
+    pane.addEventListener("wheel", onWheel, { passive: false });
+    return () => pane.removeEventListener("wheel", onWheel);
+  }, []);
 
   const handleSelect = useCallback((name: string) => {
     setActiveFile(name);
@@ -265,32 +287,30 @@ export function EditorWorkspace({
       />
 
       <main className="flex min-h-0 flex-1 flex-col">
-        <div
-          id={EDITOR_TABPANEL_ID}
-          role="tabpanel"
-          aria-labelledby={fileTabId(active.name)}
-          className="relative min-h-0 flex-1 border-b border-line"
-        >
-          <div className="absolute inset-0">
-            <EditorPanel file={active} fontSize={fontSize} onChange={handleContentChange} />
-          </div>
-        </div>
-
-        <div
-          className={cn(
-            "shrink-0",
-            hasImage ? "h-[52%] max-h-[30rem] min-h-52" : "h-[38%] max-h-80 min-h-36",
-          )}
-        >
-          <OutputPanel
-            result={result}
-            isRunning={isRunning}
-            entryFile={active.name}
-            error={runError}
-            liveFrameRef={liveFrameRef}
-            frameCount={frameCount}
-          />
-        </div>
+        <SplitPane
+          first={
+            <div
+              id={EDITOR_TABPANEL_ID}
+              role="tabpanel"
+              aria-labelledby={fileTabId(active.name)}
+              className="relative h-full"
+            >
+              <div ref={editorPaneRef} className="absolute inset-0">
+                <EditorPanel file={active} fontSize={fontSize} onChange={handleContentChange} />
+              </div>
+            </div>
+          }
+          second={
+            <OutputPanel
+              result={result}
+              isRunning={isRunning}
+              entryFile={active.name}
+              error={runError}
+              liveFrameRef={liveFrameRef}
+              frameCount={frameCount}
+            />
+          }
+        />
       </main>
     </div>
   );

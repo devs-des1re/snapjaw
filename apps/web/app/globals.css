@@ -1,24 +1,26 @@
 @import "tailwindcss";
 
 @theme {
+  /* #0099ff is the primary action colour only — the Run button and nothing else */
   --color-accent: #0099ff;
   --color-accent-hover: #1fa6ff;
   --color-accent-active: #0088e6;
   --color-accent-fg: #04121f;
 
   /* Surfaces, darkest to lightest */
-  --color-canvas: #0a0c10;
-  --color-surface: #101419;
-  --color-panel: #141920;
-  --color-elevated: #1a2028;
+  --color-canvas: #0d0d0f;
+  --color-surface: #151518;
+  --color-panel: #1c1c20;
+  --color-elevated: #26262b;
 
-  --color-line: #232a33;
-  --color-line-strong: #333c47;
+  --color-line: #2b2b31;
+  --color-line-strong: #3d3d45;
 
-  --color-fg: #e6e9ed;
-  --color-fg-muted: #98a2ad;
-  --color-fg-subtle: #6a737d;
+  --color-fg: #e9e9ec;
+  --color-fg-muted: #a1a1a8;
+  --color-fg-subtle: #71717a;
 
+  --color-focus: #8e8e97;
   --color-danger: #ff6b6b;
   --color-warn: #ffb454;
   --color-ok: #4cd48a;
@@ -39,12 +41,12 @@
 
   /* Spacing: base step plus the two chrome row heights */
   --spacing: 0.25rem;
-  --spacing-menubar: 3rem;
-  --spacing-tabbar: 2.5rem;
+  --spacing-menubar: 3.25rem;
+  --spacing-tabbar: 2.75rem;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 }
 
 @layer base {
@@ -67,12 +69,12 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 
   ::selection {
-    background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+    background-color: color-mix(in srgb, var(--color-fg) 22%, transparent);
     color: var(--color-fg);
   }
 

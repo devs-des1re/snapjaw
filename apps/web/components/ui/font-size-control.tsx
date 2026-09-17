@@ -40,7 +40,7 @@ export function FontSizeControl({
       <span
         aria-live="polite"
         aria-atomic="true"
-        className="min-w-9 text-center font-mono text-2xs text-fg-muted tabular-nums"
+        className="min-w-9 text-center text-2xs text-fg-muted tabular-nums"
       >
         {value}px
       </span>

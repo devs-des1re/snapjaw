@@ -41,56 +41,67 @@ if (typeof self !== "undefined") {
 
 loader.config({ monaco });
 
+// A VS Code Dark+ style palette: keywords, strings, numbers and calls each get
+// their own hue rather than everything sharing the brand blue.
 function defineSnapjawTheme(monacoInstance: Monaco): void {
   monacoInstance.editor.defineTheme(SNAPJAW_THEME, {
     base: "vs-dark",
     inherit: true,
     rules: [
-      { token: "", foreground: "e6e9ed", background: "0a0c10" },
-      { token: "comment", foreground: "6a737d", fontStyle: "italic" },
-      { token: "keyword", foreground: "0099ff" },
-      { token: "string", foreground: "4cd48a" },
-      { token: "number", foreground: "ffb454" },
-      { token: "type", foreground: "7fd3ff" },
-      { token: "delimiter", foreground: "98a2ad" },
-      { token: "operator", foreground: "98a2ad" },
+      { token: "", foreground: "d4d4d8", background: "0d0d0f" },
+      { token: "comment", foreground: "6b7280", fontStyle: "italic" },
+      { token: "keyword", foreground: "c586c0" },
+      { token: "keyword.control", foreground: "c586c0" },
+      { token: "string", foreground: "ce9178" },
+      { token: "string.escape", foreground: "d7ba7d" },
+      { token: "number", foreground: "b5cea8" },
+      { token: "constant", foreground: "4fc1ff" },
+      { token: "type", foreground: "4ec9b0" },
+      { token: "type.identifier", foreground: "4ec9b0" },
+      { token: "identifier", foreground: "d4d4d8" },
+      { token: "function", foreground: "dcdcaa" },
+      { token: "delimiter", foreground: "9ca3af" },
+      { token: "operator", foreground: "d4d4d8" },
+      { token: "tag", foreground: "569cd6" },
+      { token: "attribute.name", foreground: "9cdcfe" },
     ],
     colors: {
-      "editor.background": "#0a0c10",
-      "editor.foreground": "#e6e9ed",
-      "editorGutter.background": "#0a0c10",
-      "editorLineNumber.foreground": "#3b444f",
-      "editorLineNumber.activeForeground": "#98a2ad",
-      "editor.lineHighlightBackground": "#141920",
-      "editor.selectionBackground": "#0099ff33",
-      "editor.inactiveSelectionBackground": "#0099ff1f",
-      "editorCursor.foreground": "#0099ff",
-      "editorIndentGuide.background1": "#1c222a",
-      "editorIndentGuide.activeBackground1": "#333c47",
-      "editorWidget.background": "#141920",
-      "editorWidget.border": "#232a33",
-      "editorSuggestWidget.background": "#141920",
-      "editorSuggestWidget.border": "#232a33",
-      "editorSuggestWidget.selectedBackground": "#1a2028",
-      "editorBracketMatch.background": "#0099ff1f",
-      "editorBracketMatch.border": "#0099ff",
-      "editorBracketHighlight.foreground1": "#0099ff",
-      "editorBracketHighlight.foreground2": "#4cd48a",
-      "editorBracketHighlight.foreground3": "#ffb454",
-      "editorBracketHighlight.foreground4": "#7fd3ff",
-      "editorBracketHighlight.foreground5": "#98a2ad",
-      "editorBracketHighlight.foreground6": "#6a737d",
+      "editor.background": "#0d0d0f",
+      "editor.foreground": "#d4d4d8",
+      "editorGutter.background": "#0d0d0f",
+      "editorLineNumber.foreground": "#3f3f46",
+      "editorLineNumber.activeForeground": "#a1a1a8",
+      "editor.lineHighlightBackground": "#1c1c20",
+      "editor.selectionBackground": "#3f3f4688",
+      "editor.inactiveSelectionBackground": "#3f3f4644",
+      "editorCursor.foreground": "#d4d4d8",
+      "editorIndentGuide.background1": "#1f1f23",
+      "editorIndentGuide.activeBackground1": "#3d3d45",
+      "editorWhitespace.foreground": "#2b2b31",
+      "editorWidget.background": "#1c1c20",
+      "editorWidget.border": "#2b2b31",
+      "editorSuggestWidget.background": "#1c1c20",
+      "editorSuggestWidget.border": "#2b2b31",
+      "editorSuggestWidget.selectedBackground": "#26262b",
+      "editorBracketMatch.background": "#3f3f4666",
+      "editorBracketMatch.border": "#71717a",
+      "editorBracketHighlight.foreground1": "#d4d4d8",
+      "editorBracketHighlight.foreground2": "#c586c0",
+      "editorBracketHighlight.foreground3": "#4ec9b0",
+      "editorBracketHighlight.foreground4": "#ce9178",
+      "editorBracketHighlight.foreground5": "#dcdcaa",
+      "editorBracketHighlight.foreground6": "#569cd6",
       "editorBracketHighlight.unexpectedBracket.foreground": "#ff6b6b",
-      "scrollbarSlider.background": "#333c4777",
-      "scrollbarSlider.hoverBackground": "#333c47aa",
-      "scrollbarSlider.activeBackground": "#333c47",
+      "scrollbarSlider.background": "#3d3d4577",
+      "scrollbarSlider.hoverBackground": "#3d3d45aa",
+      "scrollbarSlider.activeBackground": "#3d3d45",
     },
   });
 }
 
 function EditorLoading() {
   return (
-    <div className="flex h-full items-center justify-center font-mono text-sm text-fg-subtle">
+    <div className="flex h-full items-center justify-center text-sm text-fg-subtle">
       Loading editor…
     </div>
   );

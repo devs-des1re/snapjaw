@@ -162,21 +162,21 @@ export function FileTabs({
 
   return (
     <div className="flex h-tabbar shrink-0 items-stretch border-b border-line bg-surface pr-2">
-      <div className="flex shrink-0 items-center gap-1 px-2 py-1">
-        <Button size="sm" variant="secondary" aria-label="New file" onClick={handleNewFile}>
-          <Icon icon={filePlusIcon} aria-hidden="true" className="size-3.5" />
+      <div className="flex shrink-0 items-center gap-2 px-3">
+        <Button size="md" variant="secondary" aria-label="New file" onClick={handleNewFile}>
+          <Icon icon={filePlusIcon} aria-hidden="true" className="size-4" />
           <span className="hidden md:inline">New file</span>
         </Button>
 
         <label
           className={cn(
-            "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 text-xs",
+            "inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg px-4 text-sm",
             "border border-line-strong bg-surface text-fg transition-colors duration-100",
             "hover:bg-elevated active:bg-panel",
-            "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent",
+            "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus",
           )}
         >
-          <Icon icon={uploadIcon} aria-hidden="true" className="size-3.5" />
+          <Icon icon={uploadIcon} aria-hidden="true" className="size-4" />
           <span className="hidden md:inline">Open file</span>
           <input
             type="file"
@@ -214,7 +214,7 @@ export function FileTabs({
                   onKeyDown={handleRenameKeyDown}
                   onBlur={commitRename}
                   onFocus={(event) => event.currentTarget.select()}
-                  className="my-1 w-40 rounded-sm border border-accent bg-panel px-2 font-mono text-xs text-fg outline-none"
+                  className="my-1 w-40 rounded-md border border-focus bg-panel px-2 text-xs text-fg outline-none"
                 />
               </div>
             );
@@ -233,10 +233,10 @@ export function FileTabs({
                 onClick={() => onSelect(file.name)}
                 onDoubleClick={() => beginRename(file.name)}
                 className={cn(
-                  "flex max-w-48 items-center truncate rounded-t-md border-b-2 px-2.5 font-mono text-xs whitespace-nowrap transition-colors",
+                  "flex max-w-48 items-center truncate rounded-t-md border-b-2 px-2.5 text-xs whitespace-nowrap transition-colors",
                   canClose && "pr-6",
                   isActive
-                    ? "border-accent bg-panel text-fg"
+                    ? "border-fg bg-panel text-fg"
                     : "border-transparent text-fg-muted hover:bg-elevated hover:text-fg",
                 )}
               >

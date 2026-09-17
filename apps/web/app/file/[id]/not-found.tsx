@@ -9,7 +9,7 @@ export default function SharedFileNotFound() {
       </p>
       <Link
         href="/"
-        className="mt-1 rounded-sm text-sm text-accent underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="mt-1 rounded-md text-sm text-fg underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         Start a new file
       </Link>

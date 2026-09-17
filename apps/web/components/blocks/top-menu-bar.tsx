@@ -29,7 +29,7 @@ export function TopMenuBar({
   const wordmark = (
     <Link
       href="/"
-      className="rounded-sm text-sm font-semibold tracking-tight text-fg"
+      className="rounded-md text-xl font-semibold tracking-tight text-fg"
       aria-label="Snapjaw home"
     >
       Snapjaw
@@ -47,7 +47,7 @@ export function TopMenuBar({
         disabled={isSharing}
         onClick={onShare}
       >
-        <Icon icon={shareIcon} aria-hidden="true" className="size-3.5" />
+        <Icon icon={shareIcon} aria-hidden="true" className="size-4" />
         <span className="hidden sm:inline">{isSharing ? "Sharing" : "Share"}</span>
       </Button>
 
@@ -58,7 +58,7 @@ export function TopMenuBar({
         disabled={isRunning}
         onClick={onRun}
       >
-        <Icon icon={playIcon} aria-hidden="true" className="size-3.5" />
+        <Icon icon={playIcon} aria-hidden="true" className="size-4" />
         {isRunning ? "Running" : "Run"}
       </Button>
     </Menubar>
