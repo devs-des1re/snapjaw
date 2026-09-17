@@ -7,9 +7,11 @@ import shareIcon from "@iconify-icons/lucide/share-2";
 
 import { Button } from "@/components/ui/button";
 import { FontSizeControl } from "@/components/ui/font-size-control";
+import { MenuBar, type MenuSpec } from "@/components/ui/menu";
 import { Menubar } from "@/components/ui/menubar";
 
 export interface TopMenuBarProps {
+  menus: MenuSpec[];
   fontSize: number;
   onFontSizeChange: (next: number) => void;
   onRun: () => void;
@@ -19,6 +21,7 @@ export interface TopMenuBarProps {
 }
 
 export function TopMenuBar({
+  menus,
   fontSize,
   onFontSizeChange,
   onRun,
@@ -29,15 +32,15 @@ export function TopMenuBar({
   const wordmark = (
     <Link
       href="/"
-      className="rounded-md text-xl font-semibold tracking-tight text-fg"
+      className="mr-1 rounded-md text-xl font-semibold tracking-tight text-fg"
       aria-label="Snapjaw home"
     >
       Snapjaw
     </Link>
   );
 
-  return (
-    <Menubar wordmark={wordmark}>
+  const actions = (
+    <>
       <FontSizeControl value={fontSize} onChange={onFontSizeChange} />
 
       <Button
@@ -61,6 +64,13 @@ export function TopMenuBar({
         <Icon icon={playIcon} aria-hidden="true" className="size-4" />
         {isRunning ? "Running" : "Run"}
       </Button>
+    </>
+  );
+
+  return (
+    <Menubar wordmark={wordmark} actions={actions}>
+      <div aria-hidden="true" className="mx-1 hidden h-4 w-px bg-line sm:block" />
+      <MenuBar menus={menus} className="hidden sm:flex" />
     </Menubar>
   );
 }

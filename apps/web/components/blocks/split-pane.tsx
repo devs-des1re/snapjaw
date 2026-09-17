@@ -15,18 +15,19 @@ import { cn } from "@/lib/cn";
 export interface SplitPaneProps {
   first: ReactNode;
   second: ReactNode;
+  /** Which way the divide runs: side-by-side splits left/right, stacked splits top/bottom. */
+  orientation: "side-by-side" | "stacked";
   initialSize?: number;
   minSize?: number;
   maxSize?: number;
 }
 
-// Side by side from md up, stacked below it, so the same component works on a phone.
-const WIDE = "(min-width: 768px)";
-
 // Two panels with a divider that can be dragged, or moved with the arrow keys.
+// Remount it (via a key) to reset the split, for example when the orientation changes.
 export function SplitPane({
   first,
   second,
+  orientation,
   initialSize = 62,
   minSize = 20,
   maxSize = 85,
@@ -35,15 +36,8 @@ export function SplitPane({
   const dragRef = useRef({ x: 0, y: 0, size: initialSize });
   const [size, setSize] = useState(initialSize);
   const [dragging, setDragging] = useState(false);
-  const [sideBySide, setSideBySide] = useState(true);
 
-  useEffect(() => {
-    const query = window.matchMedia(WIDE);
-    const sync = () => setSideBySide(query.matches);
-    sync();
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
-  }, []);
+  const sideBySide = orientation === "side-by-side";
 
   const clamp = useCallback(
     (value: number) => Math.min(maxSize, Math.max(minSize, value)),
@@ -130,4 +124,19 @@ export function SplitPane({
       <div className="min-h-0 min-w-0 flex-1">{second}</div>
     </div>
   );
+}
+
+// Panels do not fit side by side on a phone, so placement falls back to stacked.
+export function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setNarrow(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  return narrow;
 }

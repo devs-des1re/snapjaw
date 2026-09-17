@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import Editor, { loader, type Monaco } from "@monaco-editor/react";
+import Editor, { loader, type Monaco, type OnMount } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
+import type { editor } from "monaco-editor";
 
 import type { ProjectFile } from "@/lib/project";
 
@@ -110,15 +111,32 @@ function EditorLoading() {
 export interface EditorPanelProps {
   file: ProjectFile;
   fontSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
   onChange: (content: string) => void;
+  onReady?: (editor: editor.IStandaloneCodeEditor) => void;
 }
 
-export function EditorPanel({ file, fontSize, onChange }: EditorPanelProps) {
+export function EditorPanel({
+  file,
+  fontSize,
+  wordWrap,
+  minimap,
+  onChange,
+  onReady,
+}: EditorPanelProps) {
   const handleChange = useCallback(
     (value: string | undefined) => {
       if (typeof value === "string") onChange(value);
     },
     [onChange],
+  );
+
+  const handleMount = useCallback<OnMount>(
+    (mounted) => {
+      onReady?.(mounted);
+    },
+    [onReady],
   );
 
   return (
@@ -128,6 +146,7 @@ export function EditorPanel({ file, fontSize, onChange }: EditorPanelProps) {
       language={languageForFile(file.name)}
       theme={SNAPJAW_THEME}
       beforeMount={defineSnapjawTheme}
+      onMount={handleMount}
       onChange={handleChange}
       loading={<EditorLoading />}
       options={{
@@ -135,7 +154,8 @@ export function EditorPanel({ file, fontSize, onChange }: EditorPanelProps) {
         fontSize,
         fontFamily: MONACO_FONT_FAMILY,
         fontLigatures: false,
-        minimap: { enabled: false },
+        wordWrap: wordWrap ? "on" : "off",
+        minimap: { enabled: minimap },
         lineNumbersMinChars: 3,
         scrollBeyondLastLine: false,
         smoothScrolling: false,

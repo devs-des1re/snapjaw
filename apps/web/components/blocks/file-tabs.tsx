@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import { Icon } from "@iconify/react";
 import filePlusIcon from "@iconify-icons/lucide/file-plus";
 import uploadIcon from "@iconify-icons/lucide/upload";
@@ -18,6 +26,10 @@ export function fileTabId(name: string): string {
   return `snapjaw-file-tab-${name}`;
 }
 
+export interface FileTabsHandle {
+  beginRename: (name: string) => void;
+}
+
 export interface FileTabsProps {
   files: readonly ProjectFile[];
   activeFile: string;
@@ -27,6 +39,8 @@ export interface FileTabsProps {
   onOpenFiles: (files: FileList) => void;
   onRename: (from: string, to: string) => RenameOutcome;
   onClose: (name: string) => void;
+  handleRef?: RefObject<FileTabsHandle | null>;
+  inputRef?: RefObject<HTMLInputElement | null>;
 }
 
 interface RenameState {
@@ -43,6 +57,8 @@ export function FileTabs({
   onOpenFiles,
   onRename,
   onClose,
+  handleRef,
+  inputRef,
 }: FileTabsProps) {
   const [editing, setEditing] = useState<RenameState | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -67,6 +83,9 @@ export function FileTabs({
     },
     [applyEditing],
   );
+
+  // The File menu renames a new file the same way the tab row does.
+  useImperativeHandle(handleRef, () => ({ beginRename }), [beginRename]);
 
   const commitRename = useCallback(() => {
     if (settledRef.current) return;
@@ -183,6 +202,7 @@ export function FileTabs({
             multiple
             aria-label="Open files from your computer"
             accept=".py,.txt,.md,.json,.csv,.html,.css,.js,.ts,text/*"
+            ref={inputRef}
             className="sr-only"
             onChange={handleFileInputChange}
           />
