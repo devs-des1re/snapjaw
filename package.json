@@ -14,8 +14,11 @@
   },
   "scripts": {
     "dev": "npm run dev --workspace @snapjaw/web",
+    "dev:all": "concurrently --names runner,web --prefix-colors blue,green --kill-others-on-fail \"npm:dev:runner\" \"npm:dev\"",
+    "dev:runner": "npm run dev --workspace @snapjaw/sandbox-runner",
     "build": "npm run build --workspace @snapjaw/web",
     "start": "npm run start --workspace @snapjaw/web",
+    "image:build": "npm run image:build --workspace @snapjaw/sandbox-runner",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -26,6 +29,7 @@
     "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "concurrently": "^10.0.5",
     "prettier": "^3.9.7",
     "prettier-plugin-tailwindcss": "^0.8.1"
   }
