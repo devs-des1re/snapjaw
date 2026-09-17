@@ -22,11 +22,18 @@ COPY apps/web ./apps/web
 COPY services/sandbox-runner/package.json ./services/sandbox-runner/package.json
 RUN npm run build --workspace @snapjaw/web
 
-# Sits between builder and runner: drizzle-kit is a dev dependency, so it is
-# gone by the time the standalone bundle is assembled. Runs from apps/web so
-# drizzle-kit finds drizzle.config.ts and the migrations beside it.
-FROM builder AS migrator
-WORKDIR /repo/apps/web
+# Migrations need drizzle-kit and the generated SQL, nothing else. Deriving this
+# from `builder` works but drags in the whole workspace install (~1.8GB); this
+# installs the version pinned in apps/web/package.json and stays small.
+FROM node:22-slim AS migrator
+WORKDIR /app
+COPY apps/web/package.json ./package.json
+RUN npm install --no-audit --no-fund \
+      "drizzle-kit@$(node -p "require('./package.json').devDependencies['drizzle-kit']")" \
+ && npm cache clean --force \
+ && rm -rf /root/.npm /tmp/*
+COPY apps/web/drizzle.config.ts ./
+COPY apps/web/drizzle ./drizzle
 CMD ["npx", "drizzle-kit", "migrate"]
 
 FROM node:22-slim AS runner
