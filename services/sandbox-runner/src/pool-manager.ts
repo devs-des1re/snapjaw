@@ -6,8 +6,10 @@ import {
   DockerError,
   dockerImageExists,
   dockerIsRunning,
+  dockerListContainersByLabel,
   dockerRemove,
   dockerRunDetached,
+  type ContainerRef,
 } from "./docker.js";
 import { describeError, log as defaultLogger } from "./logger.js";
 import { containerAnswers, resetContainer } from "./run-in-container.js";
@@ -50,12 +52,48 @@ interface Waiter {
 
 const SPAWN_READY_TIMEOUT_MS = 30_000;
 
+/** Grace period for an outgoing runner to drain before we collect its pool. */
+const ORPHAN_SETTLE_MS = 4_000;
+
+/**
+ * How many health-check ticks run an orphan sweep.
+ *
+ * Startup alone misses containers the outgoing runner creates *after* we have
+ * swept — it replenishes when it notices its pool disappear, and a hard kill
+ * means it never removes the replacements. Sweeping once more a health interval
+ * later collects those, by which point the outgoing runner is gone.
+ *
+ * Bounded on purpose: a lifelong sweep would delete containers a live peer is
+ * still executing in, which surfaces as "No such container" mid-run.
+ */
+const SWEEP_TICKS = 2;
+
+/** Marks containers this service owns, so stale ones can be found again. */
+export const SANDBOX_LABEL = "snapjaw.role=sandbox";
+
+/**
+ * Containers left behind by a previous run of this service.
+ *
+ * A runner that is killed hard cannot clean up after itself — `docker compose
+ * up` after a redeploy, or a crash — so without this the host accumulates
+ * sandbox containers on every deploy. Scoped to the configured name prefix so
+ * a second stack on the same host is left alone.
+ */
+export function selectOrphanedSandboxes(
+  containers: readonly ContainerRef[],
+  containerPrefix: string,
+): ContainerRef[] {
+  const prefix = `${containerPrefix}-`;
+  return containers.filter((container) => container.name.startsWith(prefix));
+}
+
 export class PoolManager {
   private readonly members = new Map<string, PoolMember>();
   private readonly waiters: Waiter[] = [];
   private healthTimer: NodeJS.Timeout | null = null;
   private healthRunning = false;
   private replenishing = false;
+  private sweepsRemaining = SWEEP_TICKS;
   private stopped = false;
 
   constructor(
@@ -71,6 +109,7 @@ export class PoolManager {
       );
     }
 
+    await this.sweepOrphans(ORPHAN_SETTLE_MS);
     await this.replenish();
 
     if (this.members.size === 0) {
@@ -217,6 +256,41 @@ export class PoolManager {
     }
   }
 
+  /**
+   * Remove sandbox containers carrying our prefix that no live runner owns.
+   *
+   * Only ever called at startup, before this instance has created anything, so
+   * the only containers it can see are ones a previous run left behind. It must
+   * NOT run periodically: while a redeploy overlaps, a continuous sweep would
+   * delete containers the outgoing runner is still executing in, which shows up
+   * as "No such container" failures mid-run.
+   *
+   * The settle delay gives an outgoing runner time to drain and remove its own
+   * pool, so we only collect what it genuinely could not clean up.
+   */
+  private async sweepOrphans(settleMs: number): Promise<void> {
+    if (settleMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, settleMs));
+    }
+
+    const known = new Set([...this.members.values()].map((member) => member.name));
+    const orphans = selectOrphanedSandboxes(
+      await dockerListContainersByLabel(SANDBOX_LABEL),
+      this.config.containerPrefix,
+    ).filter((container) => !known.has(container.name));
+
+    if (orphans.length === 0) return;
+
+    this.logger("warn", "sweeping sandbox containers left by a previous run", {
+      count: orphans.length,
+      containers: orphans.map((container) => container.name),
+    });
+
+    for (const orphan of orphans) {
+      await dockerRemove(orphan.name);
+    }
+  }
+
   private async spawnMember(): Promise<PoolMember> {
     const name = `${this.config.containerPrefix}-${randomUUID().slice(0, 8)}`;
 
@@ -241,7 +315,7 @@ export class PoolManager {
       "--tmpfs",
       `/tmp:rw,size=${this.config.tmpfsSize},mode=1777`,
       "--label",
-      "snapjaw.role=sandbox",
+      SANDBOX_LABEL,
       this.config.image,
     ]);
 
@@ -254,12 +328,17 @@ export class PoolManager {
       busySince: null,
     };
 
+    // Register before waiting for readiness: until it is in the map an orphan
+    // sweep would see a container it does not recognise and delete it.
+    this.members.set(member.id, member);
+
     const deadline = Date.now() + SPAWN_READY_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (await containerAnswers(name)) return member;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
+    this.members.delete(member.id);
     await dockerRemove(name);
     throw new Error(`sandbox ${name} did not become ready within ${SPAWN_READY_TIMEOUT_MS}ms`);
   }
@@ -273,7 +352,6 @@ export class PoolManager {
         try {
           const member = await this.spawnMember();
           member.state = "idle";
-          this.members.set(member.id, member);
           this.dispatch();
         } catch (error) {
           this.logger("error", "could not start a sandbox", {
@@ -306,6 +384,9 @@ export class PoolManager {
 
     try {
       for (const member of [...this.members.values()]) {
+        // A container that is still coming up is not expected to answer yet.
+        if (member.state === "starting") continue;
+
         if (member.state === "busy") {
           const heldFor = member.busySince === null ? 0 : Date.now() - member.busySince;
           if (heldFor <= stuckAfterMs) continue;
@@ -326,6 +407,13 @@ export class PoolManager {
         member.state = "unhealthy";
         this.members.delete(member.id);
         await dockerRemove(member.name);
+      }
+
+      // The startup sweep already ran; a couple more ticks collect anything a
+      // departing runner created afterwards, without ever fighting a live peer.
+      if (this.sweepsRemaining > 0) {
+        this.sweepsRemaining -= 1;
+        await this.sweepOrphans(0);
       }
 
       await this.replenish();

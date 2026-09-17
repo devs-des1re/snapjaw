@@ -129,6 +129,7 @@ export function EditorPanel({ file, fontSize, onChange }: EditorPanelProps) {
       onChange={handleChange}
       loading={<EditorLoading />}
       options={{
+        ariaLabel: `Code editor for ${file.name}`,
         fontSize,
         fontFamily: MONACO_FONT_FAMILY,
         fontLigatures: false,

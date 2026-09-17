@@ -1,6 +1,6 @@
 {
   "name": "@snapjaw/sandbox-runner",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Snapjaw sandbox runner — owns the warm container pool that executes untrusted Python.",

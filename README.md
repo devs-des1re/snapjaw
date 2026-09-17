@@ -12,17 +12,15 @@ sandboxed container — turtle and tkinter output included — and share your fi
 
 ## Status
 
-Phase 3 of 4 is complete: real sandboxed execution. **Run** executes Python in a disposable
-container and returns genuine stdout, stderr and exit codes. Turtle and tkinter programs are
-**streamed live** into the output panel as they draw, and the last frame stays on screen
-afterwards.
+v1 — complete. Write Python in the browser, run it in a disposable sandbox with turtle and tkinter
+rendered live at up to 60fps, and share your files with a link.
 
 | Phase | Scope                             | State |
 | ----- | --------------------------------- | ----- |
 | 1     | Editor UI shell                   | Done  |
 | 2     | Database and file sharing         | Done  |
 | 3     | Sandbox runner and real execution | Done  |
-| 4     | Deployment and polish             | Next  |
+| 4     | Deployment and polish             | Done  |
 
 ## Repository layout
 
@@ -30,15 +28,18 @@ afterwards.
 snapjaw/
 ├── apps/
 │   └── web/                       Next.js app — editor UI, API routes, sharing
-│       ├── app/api/               health, ping, run, shared-files
+│       ├── app/api/               health, ping, run, run/stream, shared-files
 │       ├── app/s/[id]/            shared file view
 │       ├── lib/db/                schema, connection, queries
-│       ├── lib/ratelimit.ts       Upstash limiter, /api/run only
-│       └── drizzle/               generated migrations
-└── services/
-    └── sandbox-runner/            Warm container pool that runs untrusted Python
-        ├── src/                   Express server, pool manager, docker wrapper
-        └── runner-image/          Python + Tk + Xvfb image and the in-container executor
+│       ├── lib/ratelimit.ts       Upstash limiter, /api/run/stream only
+│       ├── drizzle/               generated migrations
+│       └── Dockerfile             three targets: builder, migrator, runner
+├── services/
+│   └── sandbox-runner/            Warm container pool that runs untrusted Python
+│       ├── src/                   Express server, pool manager, docker wrapper
+│       ├── runner-image/          Python + Tk + Xvfb image and the in-container executor
+│       └── Dockerfile             the runner service's own image
+└── docker-compose.yml             postgres + migrate + sandbox-runner + web
 ```
 
 The sandbox runner is a separate service on purpose. Untrusted user code must never execute
@@ -90,19 +91,69 @@ which would bake one environment's URL into every deployment.
 Run from the repository root. `dev`, `build`, `start`, `lint`, `typecheck`, `test` and the `db:*`
 commands delegate to the workspace packages.
 
-| Script                 | Purpose                                  |
-| ---------------------- | ---------------------------------------- |
-| `npm run dev`          | Start the web app in development         |
-| `npm run build`        | Production build                         |
-| `npm start`            | Serve the production build               |
-| `npm run db:generate`  | Generate a migration from the schema     |
-| `npm run db:migrate`   | Apply pending migrations                 |
-| `npm run db:push`      | Push the schema straight to the database |
-| `npm run lint`         | ESLint                                   |
-| `npm run typecheck`    | `tsc --noEmit`                           |
-| `npm test`             | Vitest, both workspaces                  |
-| `npm run format`       | Prettier, writes changes                 |
-| `npm run format:check` | Prettier, check only                     |
+| Script                 | Purpose                                      |
+| ---------------------- | -------------------------------------------- |
+| `npm run dev`          | Start the web app in development             |
+| `npm run dev:all`      | Start the web app **and** the sandbox runner |
+| `npm run dev:runner`   | Start only the sandbox runner                |
+| `npm run image:build`  | Build the sandbox image                      |
+| `npm run build`        | Production build                             |
+| `npm start`            | Serve the production build                   |
+| `npm run db:generate`  | Generate a migration from the schema         |
+| `npm run db:migrate`   | Apply pending migrations                     |
+| `npm run db:push`      | Push the schema straight to the database     |
+| `npm run lint`         | ESLint                                       |
+| `npm run typecheck`    | `tsc --noEmit`                               |
+| `npm test`             | Vitest, both workspaces                      |
+| `npm run format`       | Prettier, writes changes                     |
+| `npm run format:check` | Prettier, check only                         |
+
+## Deployment
+
+The whole stack runs under Docker Compose: Postgres, a migration step, the sandbox runner and the
+web app, with Traefik labels on the web service.
+
+```bash
+cp .env.example .env      # set POSTGRES_PASSWORD, APP_HOST and APP_URL at minimum
+docker network create traefik   # unless your proxy already has one
+docker compose up -d --build
+```
+
+`docker compose up -d` brings things up in the right order on its own:
+
+1. `postgres` starts and passes its healthcheck.
+2. `sandbox-image` builds `snapjaw-runner:latest` and exits. It exists only so that
+   `docker compose build` produces the image the runner launches through the host daemon.
+3. `migrate` applies pending Drizzle migrations and exits. It is idempotent, so running it on
+   every `up` is safe.
+4. `sandbox-runner` starts, prunes any sandbox containers left behind by a previous run, and
+   fills its pool.
+5. `web` starts once migrations have completed.
+
+The web service binds to `127.0.0.1:8080` by default — enough to smoke-test the stack without a
+proxy in front of it. Traefik routes the public host to it on port 3000.
+
+### Notes for operating it
+
+- **One runner per Docker host.** The runner drives the host daemon and prunes containers
+  matching its name prefix at startup, so a second instance would fight the first.
+- **Redeploys can briefly leave idle sandbox containers.** A hard-killed runner cannot remove its
+  pool. The incoming runner sweeps those at startup and again over its next couple of health
+  ticks, so the count self-corrects; a graceful stop removes them immediately. The residue is
+  inert — containers idling on `sleep infinity`, costing no CPU.
+- **Nothing but the web app is exposed.** The runner sits only on the internal network; the
+  containers it spawns have no network at all.
+- **Back up the `postgres-data` volume.** Shares live there and nowhere else.
+- **Compression middleware is deliberately not enabled** on the Traefik router. Traefik's
+  compress middleware buffers responses, and `/api/run/stream` depends on unbuffered delivery.
+- **Rate limiting needs Upstash credentials.** Without `UPSTASH_REDIS_REST_*` the limiter is
+  disabled and logs a warning rather than failing closed.
+
+### Runtime image sizes
+
+The web image is around 440 MB (a Next.js standalone bundle on `node:22-slim`). The sandbox image
+is around 630 MB, most of which is the Tk, Xvfb and ImageMagick apt layer — Pillow, which does the
+fast display capture, is under 20 MB of it. It is pulled once and reused by every run.
 
 ## API
 
@@ -112,8 +163,8 @@ failures always use the same shape:
 ```json
 {
   "error": { "code": "NOT_FOUND", "message": "That shared file does not exist." },
-  "timestamp": "2026-09-16T19:08:04.061Z",
-  "version": "0.3.0"
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "version": "1.0.0"
 }
 ```
 

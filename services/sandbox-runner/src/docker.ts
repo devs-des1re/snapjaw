@@ -273,3 +273,31 @@ export async function dockerImageExists(image: string): Promise<boolean> {
     return false;
   }
 }
+
+export interface ContainerRef {
+  id: string;
+  name: string;
+}
+
+/** Every container carrying the given label, running or not. */
+export async function dockerListContainersByLabel(label: string): Promise<ContainerRef[]> {
+  try {
+    const result = await runDocker(
+      ["ps", "-a", "--filter", `label=${label}`, "--format", "{{.ID}}\t{{.Names}}"],
+      { timeoutMs: 20_000 },
+    );
+    if (result.code !== 0) return [];
+
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [id, name] = line.split("\t");
+        return { id: id ?? "", name: name ?? "" };
+      })
+      .filter((entry) => entry.id !== "" && entry.name !== "");
+  } catch {
+    return [];
+  }
+}

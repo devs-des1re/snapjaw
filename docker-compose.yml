@@ -1,0 +1,130 @@
+name: snapjaw
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-snapjaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-snapjaw}
+    volumes:
+      # postgres:18 stores data in a major-version subdirectory and refuses to
+      # start if the volume is mounted at the old /var/lib/postgresql/data path.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [internal]
+
+  # Exists only so `docker compose build` produces the sandbox image the runner
+  # launches through the host daemon. It never actually runs.
+  sandbox-image:
+    image: snapjaw-runner:latest
+    build:
+      context: ./services/sandbox-runner/runner-image
+    entrypoint: ["/bin/true"]
+    restart: "no"
+    networks: [internal]
+
+  # Applies pending Drizzle migrations, then exits. Idempotent, so it is safe to
+  # run on every `up`.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: migrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-snapjaw}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-snapjaw}
+    restart: "no"
+    networks: [internal]
+
+  sandbox-runner:
+    build:
+      context: .
+      dockerfile: services/sandbox-runner/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      sandbox-image:
+        condition: service_completed_successfully
+    environment:
+      SANDBOX_RUNNER_PORT: "4000"
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-}
+      SANDBOX_IMAGE: snapjaw-runner:latest
+      SANDBOX_POOL_SIZE: ${SANDBOX_POOL_SIZE:-3}
+      SANDBOX_TIMEOUT_MS: ${SANDBOX_TIMEOUT_MS:-10000}
+      SANDBOX_MEMORY: ${SANDBOX_MEMORY:-256m}
+      SANDBOX_CPUS: ${SANDBOX_CPUS:-1}
+      SANDBOX_STREAM_FPS: ${SANDBOX_STREAM_FPS:-60}
+      SANDBOX_STREAM_QUALITY: ${SANDBOX_STREAM_QUALITY:-60}
+      SANDBOX_STREAM_WIDTH: ${SANDBOX_STREAM_WIDTH:-800}
+    volumes:
+      # The runner has to spawn sibling containers, so it drives the host
+      # daemon. Reasoning in the README.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Generous window so a graceful stop can remove its container pool before
+    # the runtime resorts to SIGKILL.
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    # Deliberately not on the traefik network: nothing outside should reach it.
+    networks: [internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      sandbox-runner:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-snapjaw}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-snapjaw}
+      APP_URL: ${APP_URL:?set APP_URL in .env}
+      SANDBOX_RUNNER_URL: http://sandbox-runner:4000
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-}
+      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
+      RUN_RATE_LIMIT: ${RUN_RATE_LIMIT:-10}
+      RUN_RATE_WINDOW: ${RUN_RATE_WINDOW:-1 m}
+    ports:
+      # Localhost-only by default; Traefik does the public routing. Useful for
+      # smoke-testing the stack without a proxy in front of it.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:3000"
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
+      traefik.http.routers.snapjaw.rule: Host(`${APP_HOST:?set APP_HOST in .env}`)
+      traefik.http.routers.snapjaw.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.snapjaw.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.services.snapjaw.loadbalancer.server.port: "3000"
+      # No compression middleware on purpose: Traefik's compress buffers
+      # responses, and /api/run/stream depends on unbuffered delivery.
+    networks: [internal, traefik]
+
+volumes:
+  postgres-data:
+
+networks:
+  internal:
+    driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
