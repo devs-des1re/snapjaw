@@ -83,9 +83,9 @@ cp apps/web/.env.example apps/web/.env
 docker compose up -d --build
 ```
 
-Change the domain in `Caddyfile` to your own — it points at a placeholder right now. The web
-container publishes no ports itself; Caddy is the only thing facing the internet and reaches it
-internally as `web:3000`.
+Change the domain in `Caddyfile` to your own — it is set to `snapjaw.dev`. The web container
+publishes no ports itself; Caddy is the only thing facing the internet and reaches it internally
+as `web:3000`.
 
 A few things worth knowing before running this for real:
 
@@ -164,6 +164,16 @@ there's no update endpoint, so re-sharing an edited project creates a new link.
 
 `jsonb` doesn't preserve key order, so tab order is rebuilt on load: entry file first, then the rest
 alphabetically.
+
+## Design notes
+
+- Editor on the left, output on the right, with a divider you can drag or move with the arrow keys.
+  It stacks vertically below `md`.
+- `#0099ff` is the primary action colour and nothing else — currently only the Run button. Tabs,
+  focus rings, selection and links are greys.
+- JetBrains Mono is the editor's font only. The UI is Inter; program output stays monospace.
+- Ctrl or Cmd plus the wheel resizes the editor font.
+- Dark theme only, by default and by design.
 
 ## License
 
