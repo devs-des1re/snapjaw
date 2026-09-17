@@ -30,7 +30,6 @@ import {
   type ProjectFile,
 } from "@/lib/project";
 import { runProjectStreaming, type LiveFrame, type RunResult } from "@/lib/run";
-import { APP_VERSION } from "@/lib/version";
 
 // Monaco is browser-only, so the editor is loaded on the client.
 const EditorPanel = dynamic(
@@ -48,7 +47,6 @@ const EditorPanel = dynamic(
 const NO_FILE: ProjectFile = { name: "", content: "" };
 
 type PanelPosition = "right" | "bottom" | "left";
-type DialogKind = "shortcuts" | "about" | null;
 
 export interface EditorWorkspaceProps {
   initialFiles: ProjectFile[];
@@ -85,7 +83,7 @@ export function EditorWorkspace({
   const [panelPosition, setPanelPosition] = useState<PanelPosition>("right");
   const [wordWrap, setWordWrap] = useState(false);
   const [minimap, setMinimap] = useState(false);
-  const [dialog, setDialog] = useState<DialogKind>(null);
+  const [dialog, setDialog] = useState<"shortcuts" | null>(null);
 
   // Frames bypass React state: setState coalesced them and dropped most of the animation.
   const liveFrameRef = useRef<LiveFrame | null>(null);
@@ -487,7 +485,6 @@ export function EditorWorkspace({
       label: "Help",
       entries: [
         { kind: "item", label: "Keyboard shortcuts", onSelect: () => setDialog("shortcuts") },
-        { kind: "item", label: "About Snapjaw", onSelect: () => setDialog("about") },
       ],
     },
   ];
@@ -579,13 +576,6 @@ export function EditorWorkspace({
             </div>
           ))}
         </dl>
-      </Dialog>
-
-      <Dialog open={dialog === "about"} title="About Snapjaw" onClose={() => setDialog(null)}>
-        <p>
-          Snapjaw {APP_VERSION} — write Python, run it in a sandboxed container, and share the files
-          with a link.
-        </p>
       </Dialog>
     </div>
   );

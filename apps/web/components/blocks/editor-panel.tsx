@@ -6,6 +6,7 @@ import * as monaco from "monaco-editor";
 import type { editor } from "monaco-editor";
 
 import type { ProjectFile } from "@/lib/project";
+import { registerPythonCompletions } from "@/lib/python/completions";
 
 const SNAPJAW_THEME = "snapjaw-dark";
 
@@ -83,7 +84,11 @@ function defineSnapjawTheme(monacoInstance: Monaco): void {
       "editorWidget.border": "#2b2b31",
       "editorSuggestWidget.background": "#1c1c20",
       "editorSuggestWidget.border": "#2b2b31",
+      "editorSuggestWidget.foreground": "#e9e9ec",
       "editorSuggestWidget.selectedBackground": "#26262b",
+      "editorSuggestWidget.selectedForeground": "#f4f4f5",
+      "editorSuggestWidget.highlightForeground": "#4fc1ff",
+      "editorSuggestWidgetStatus.foreground": "#a1a1a8",
       "editorBracketMatch.background": "#3f3f4666",
       "editorBracketMatch.border": "#71717a",
       "editorBracketHighlight.foreground1": "#d4d4d8",
@@ -106,6 +111,11 @@ function EditorLoading() {
       Loading editor…
     </div>
   );
+}
+
+function configureMonaco(monacoInstance: Monaco): void {
+  defineSnapjawTheme(monacoInstance);
+  registerPythonCompletions(monacoInstance);
 }
 
 export interface EditorPanelProps {
@@ -145,7 +155,7 @@ export function EditorPanel({
       value={file.content}
       language={languageForFile(file.name)}
       theme={SNAPJAW_THEME}
-      beforeMount={defineSnapjawTheme}
+      beforeMount={configureMonaco}
       onMount={handleMount}
       onChange={handleChange}
       loading={<EditorLoading />}
@@ -169,6 +179,13 @@ export function EditorPanel({
         overviewRulerLanes: 0,
         overviewRulerBorder: false,
         hideCursorInOverviewRuler: true,
+        quickSuggestions: { other: true, comments: false, strings: false },
+        quickSuggestionsDelay: 80,
+        suggestOnTriggerCharacters: true,
+        wordBasedSuggestions: "currentDocument",
+        snippetSuggestions: "top",
+        tabCompletion: "on",
+        suggest: { showWords: true, showSnippets: true, preview: true, insertMode: "insert" },
         scrollbar: {
           verticalScrollbarSize: 10,
           horizontalScrollbarSize: 10,

@@ -174,6 +174,9 @@ alphabetically.
 - `#0099ff` is the primary action colour and nothing else — currently only the Run button. Tabs,
   focus rings, selection and links are greys.
 - JetBrains Mono is the editor's font only. The UI is Inter; program output stays monospace.
+- Typing offers quick suggestions: Python keywords and snippets, builtins and exceptions, the standard
+  library on `import`, and the members of a module after `from … import` or a `.`. There's no language
+  server behind it — the lists are static tables in `lib/python`, filtered by Monaco.
 - Ctrl or Cmd plus the wheel resizes the editor font.
 - Dark theme only, by default and by design.
 

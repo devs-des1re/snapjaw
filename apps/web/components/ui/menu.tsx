@@ -8,6 +8,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { Icon } from "@iconify/react";
+import checkIcon from "@iconify-icons/lucide/check";
 
 import { cn } from "@/lib/cn";
 
@@ -58,8 +60,8 @@ function selectedItems(container: HTMLElement | null | undefined): HTMLButtonEle
 
 function Tick() {
   return (
-    <span aria-hidden="true" className="w-4 shrink-0 text-fg">
-      ✓
+    <span aria-hidden="true" className="flex w-4 shrink-0 justify-center text-fg">
+      <Icon icon={checkIcon} className="size-3.5" />
     </span>
   );
 }
