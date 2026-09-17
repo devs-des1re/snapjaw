@@ -169,6 +169,8 @@ alphabetically.
 
 - Editor on the left, output on the right, with a divider you can drag or move with the arrow keys.
   It stacks vertically below `md`.
+- A File/Edit/View/Run/Help menubar drives the editor. View moves the output panel between right,
+  left and bottom, and toggles word wrap and the minimap.
 - `#0099ff` is the primary action colour and nothing else — currently only the Run button. Tabs,
   focus rings, selection and links are greys.
 - JetBrains Mono is the editor's font only. The UI is Inter; program output stays monospace.
