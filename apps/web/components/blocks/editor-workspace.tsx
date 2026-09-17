@@ -26,11 +26,7 @@ import {
 } from "@/lib/project";
 import { runProjectStreaming, type LiveFrame, type RunResult } from "@/lib/run";
 
-/**
- * Monaco only exists in the browser, so the editor is loaded on the client.
- * `h-full` on the loading state keeps the panel from collapsing while it
- * arrives.
- */
+// Monaco is browser-only, so the editor is loaded on the client.
 const EditorPanel = dynamic(
   () => import("@/components/blocks/editor-panel").then((module) => module.EditorPanel),
   {
@@ -51,10 +47,7 @@ export interface EditorWorkspaceProps {
   initialFontSize: number;
 }
 
-/**
- * The whole editor surface. Used by the home page with a starter project and
- * by /s/[id] with a project loaded from the database.
- */
+// The whole editor surface, shared by the home page and /file/[id].
 export function EditorWorkspace({
   initialFiles,
   initialActiveFile,
@@ -68,9 +61,7 @@ export function EditorWorkspace({
   const [frameCount, setFrameCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
 
-  // Frames bypass React state: at 60fps, routing each one through setState made
-  // React coalesce them and drop most of the animation. The stream writes into
-  // this ref and LiveDisplay paints it on animation frames instead.
+  // Frames bypass React state: setState coalesced them and dropped most of the animation.
   const liveFrameRef = useRef<LiveFrame | null>(null);
   const frameCountRef = useRef(0);
   const lastFrameStatusAt = useRef(0);
@@ -80,8 +71,7 @@ export function EditorWorkspace({
 
   const active = files.find((file) => file.name === activeFile) ?? files[0] ?? NO_FILE;
 
-  // A captured turtle/tkinter window needs the room to be legible, so the
-  // output panel grows when there is one to show — live or final.
+  // A captured display needs the room to be legible, live or final.
   const hasImage = result?.image != null || frameCount > 0;
 
   const handleSelect = useCallback((name: string) => {
@@ -173,11 +163,10 @@ export function EditorWorkspace({
     try {
       const outcome = await runProjectStreaming(files, active.name, {
         onFrame: (frame) => {
-          // Drawing happens from the ref; only the status line needs state, and
-          // it is throttled so 60fps frames do not cause 60 React renders.
           liveFrameRef.current = frame;
           frameCountRef.current += 1;
 
+          // Only the status line needs state, throttled so frames do not trigger renders.
           const now = Date.now();
           if (frameCountRef.current === 1 || now - lastFrameStatusAt.current >= 200) {
             lastFrameStatusAt.current = now;
@@ -192,7 +181,6 @@ export function EditorWorkspace({
         setRunError(outcome.message);
       }
     } finally {
-      // The final image takes over from the live view, in the same render.
       liveFrameRef.current = null;
       setFrameCount(frameCountRef.current);
       setIsRunning(false);
@@ -205,7 +193,7 @@ export function EditorWorkspace({
     setShare({ status: "sharing" });
 
     try {
-      const response = await fetch("/api/shared-files", {
+      const response = await fetch("/api/file", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -270,7 +258,6 @@ export function EditorWorkspace({
         onClose={handleClose}
       />
 
-      {/* Keyed by share state so copy feedback resets on each new share. */}
       <ShareBar
         key={share.status === "shared" ? share.url : share.status}
         state={share}

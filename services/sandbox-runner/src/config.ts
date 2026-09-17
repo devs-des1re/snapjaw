@@ -17,7 +17,6 @@ export interface RunnerConfig {
   streamFps: number;
   streamQuality: number;
   streamWidth: number;
-  /** Force the slower ImageMagick capture path. Diagnostics and tests. */
   forceFallbackCapture: boolean;
   token: string | null;
 }
@@ -63,10 +62,7 @@ export function loadConfig(env: Env = process.env): RunnerConfig {
   };
 }
 
-/**
- * The helper enforces the program's wall clock itself; this is the outer
- * guard for the `docker exec` transport, so it must always be longer.
- */
+// Must outlive the helper's own wall-clock limit.
 export function transportTimeoutMs(config: RunnerConfig): number {
   return config.runTimeoutMs + 15000;
 }

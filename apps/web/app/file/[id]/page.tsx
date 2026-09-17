@@ -10,7 +10,7 @@ import { sharedFileIdSchema } from "@/lib/validation";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Shared files — Snapjaw",
+  title: "Shared file — Snapjaw",
 };
 
 export default async function SharedFilePage({ params }: { params: Promise<{ id: string }> }) {
@@ -23,10 +23,7 @@ export default async function SharedFilePage({ params }: { params: Promise<{ id:
   try {
     record = await getSharedFileById(parsedId.data);
   } catch (error) {
-    log("error", "shared file page failed to load", {
-      id: parsedId.data,
-      error: describeError(error),
-    });
+    log("error", "file page failed to load", { id: parsedId.data, error: describeError(error) });
     throw error;
   }
 

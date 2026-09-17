@@ -3,21 +3,13 @@ import { Redis } from "@upstash/redis";
 
 import { log } from "@/lib/logger";
 
-/**
- * Rate limiting for /api/run only — it is the one endpoint that costs real
- * CPU, memory and wall clock.
- *
- * When Upstash is not configured the limiter is disabled rather than failing
- * closed, so local development works without a Redis. That is logged loudly
- * once, and a production deployment should always set both variables.
- */
+// Fails open when Upstash is unconfigured, so local development needs no Redis.
 
 export interface RateLimitOutcome {
   allowed: boolean;
   limit: number;
   remaining: number;
   retryAfterSeconds: number;
-  /** False when no Upstash credentials are present. */
   enforced: boolean;
 }
 
@@ -68,9 +60,6 @@ function getLimiter(): Limiter | null {
   return cached;
 }
 
-/**
- * Behind Traefik the client address arrives in x-forwarded-for.
- */
 export function clientIdentifier(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {

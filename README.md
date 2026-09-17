@@ -28,8 +28,8 @@ rendered live at up to 60fps, and share your files with a link.
 snapjaw/
 ├── apps/
 │   └── web/                       Next.js app — editor UI, API routes, sharing
-│       ├── app/api/               health, ping, run, run/stream, shared-files
-│       ├── app/s/[id]/            shared file view
+│       ├── app/api/               health, ping, run, run/stream, file
+│       ├── app/file/[id]/         shared file view
 │       ├── lib/db/                schema, connection, queries
 │       ├── lib/ratelimit.ts       Upstash limiter, /api/run/stream only
 │       ├── drizzle/               generated migrations
@@ -39,7 +39,8 @@ snapjaw/
 │       ├── src/                   Express server, pool manager, docker wrapper
 │       ├── runner-image/          Python + Tk + Xvfb image and the in-container executor
 │       └── Dockerfile             the runner service's own image
-└── docker-compose.yml             postgres + migrate + sandbox-runner + web
+├── Caddyfile                      TLS and the public entrypoint
+└── docker-compose.yml             caddy + web
 ```
 
 The sandbox runner is a separate service on purpose. Untrusted user code must never execute
@@ -110,44 +111,35 @@ commands delegate to the workspace packages.
 
 ## Deployment
 
-The whole stack runs under Docker Compose: Postgres, a migration step, the sandbox runner and the
-web app, with Traefik labels on the web service.
+Docker Compose runs two services: Caddy as the public entrypoint, and the Next.js app behind it.
+Caddy obtains and renews Let's Encrypt certificates on its own.
 
 ```bash
-cp .env.example .env      # set POSTGRES_PASSWORD, APP_HOST and APP_URL at minimum
-docker network create traefik   # unless your proxy already has one
+cp apps/web/.env.example apps/web/.env   # compose reads this file
 docker compose up -d --build
 ```
 
-`docker compose up -d` brings things up in the right order on its own:
+Caddy publishes 80 and 443 and terminates TLS for the domain in `Caddyfile`, which currently
+points at `snapjaw.dev` — change that one line to your own domain. The web container publishes no
+ports; Caddy reaches it internally as `web:3000`.
 
-1. `postgres` starts and passes its healthcheck.
-2. `sandbox-image` builds `snapjaw-runner:latest` and exits. It exists only so that
-   `docker compose build` produces the image the runner launches through the host daemon.
-3. `migrate` applies pending Drizzle migrations and exits. It is idempotent, so running it on
-   every `up` is safe.
-4. `sandbox-runner` starts, prunes any sandbox containers left behind by a previous run, and
-   fills its pool.
-5. `web` starts once migrations have completed.
-
-The web service binds to `127.0.0.1:8080` by default — enough to smoke-test the stack without a
-proxy in front of it. Traefik routes the public host to it on port 3000.
+Postgres and the sandbox runner are deliberately not in this file yet. Until they are added back,
+sharing and **Run** will fail with a clear service-unavailable error.
 
 ### Notes for operating it
 
+- **Rate limiting needs Upstash credentials.** Without `UPSTASH_REDIS_REST_*` the limiter is
+  disabled and logs a warning rather than failing closed.
+- **`Caddyfile` sets `flush_interval -1`** on the proxy so `/api/run/stream` is not buffered.
+  Removing it would add latency to the live sandbox stream.
 - **One runner per Docker host.** The runner drives the host daemon and prunes containers
   matching its name prefix at startup, so a second instance would fight the first.
 - **Redeploys can briefly leave idle sandbox containers.** A hard-killed runner cannot remove its
   pool. The incoming runner sweeps those at startup and again over its next couple of health
   ticks, so the count self-corrects; a graceful stop removes them immediately. The residue is
   inert — containers idling on `sleep infinity`, costing no CPU.
-- **Nothing but the web app is exposed.** The runner sits only on the internal network; the
-  containers it spawns have no network at all.
-- **Back up the `postgres-data` volume.** Shares live there and nowhere else.
-- **Compression middleware is deliberately not enabled** on the Traefik router. Traefik's
-  compress middleware buffers responses, and `/api/run/stream` depends on unbuffered delivery.
-- **Rate limiting needs Upstash credentials.** Without `UPSTASH_REDIS_REST_*` the limiter is
-  disabled and logs a warning rather than failing closed.
+- **Back up the `postgres-data` volume** once Postgres is added back. Shares live there and
+  nowhere else.
 
 ### Runtime image sizes
 
@@ -168,20 +160,20 @@ failures always use the same shape:
 }
 ```
 
-| Method | Route                    | Notes                                                             |
-| ------ | ------------------------ | ----------------------------------------------------------------- |
-| `GET`  | `/api/health`            | `{ "status": "ok" }`. Liveness only — never touches the database. |
-| `GET`  | `/api/ping`              | `{ "pong": true, "latencyMs": n }` — server handling time.        |
-| `POST` | `/api/run`               | Execute a project, wait, return the result as JSON.               |
-| `POST` | `/api/run/stream`        | Execute a project and relay display frames live.                  |
-| `POST` | `/api/shared-files`      | Store a project, return `{ id, url, path }`. `201`.               |
-| `GET`  | `/api/shared-files/[id]` | Fetch a shared project. `404` if absent or soft-deleted.          |
+| Method | Route             | Notes                                                             |
+| ------ | ----------------- | ----------------------------------------------------------------- |
+| `GET`  | `/api/health`     | `{ "status": "ok" }`. Liveness only — never touches the database. |
+| `GET`  | `/api/ping`       | `{ "pong": true, "latencyMs": n }` — server handling time.        |
+| `POST` | `/api/run`        | Execute a project, wait, return the result as JSON.               |
+| `POST` | `/api/run/stream` | Execute a project and relay display frames live.                  |
+| `POST` | `/api/file`       | Store a project, return `{ id, url, path }`. `201`.               |
+| `GET`  | `/api/file/[id]`  | Fetch a shared project. `404` if absent or soft-deleted.          |
 
 `/api/run/stream` responds with newline-delimited JSON:
-`{"type":"frame","seq":n,"atMs":n,"png":"<base64>"}` while a turtle or tkinter window is being
-drawn, then exactly one `{"type":"result",...}` or `{"type":"error",...}`. Console programs simply
-produce no frames. The editor uses this endpoint; `/api/run` stays as the simple blocking call for
-scripts.
+`{"type":"frame","seq":n,"atMs":n,"format":"jpeg","data":"<base64>"}` while a turtle or tkinter
+window is being drawn, then exactly one `{"type":"result",...}` or `{"type":"error",...}`. Console
+programs simply produce no frames. The editor uses this endpoint; `/api/run` stays as the simple
+blocking call for scripts.
 
 Validation is Zod on every request body. Status codes: `400` malformed or invalid, `404` missing,
 `413` oversized, `429` rate limited, `502` the sandbox failed, `503` the sandbox is unavailable,
@@ -262,12 +254,15 @@ the same thing that happens on a desktop. The streamed frames up to that point a
 
 ### Docker access: socket mount, not DinD
 
-The runner is given the host's Docker socket. In `docker-compose.yml` that is:
+The runner is given the host's Docker socket:
 
 ```yaml
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock
 ```
+
+That service is not in `docker-compose.yml` yet — it is added back on request. When it is, the
+socket mount above is the line it needs.
 
 **Why not Docker-in-Docker?** DinD runs a second daemon inside the runner container, which needs
 `--privileged`, its own storage driver and image cache, and a nested network setup. The socket mount

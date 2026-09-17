@@ -11,15 +11,11 @@ const LOG_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel | undefined) ?? "
 
 const LEVEL_RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
-/**
- * Fixed, not configurable: the bundler statically traces filesystem access, and
- * a dynamic directory makes it pull the entire project into the server output.
- */
+// Fixed, not configurable: a dynamic path makes the bundler trace the whole project.
 const LOG_DIRECTORY = "logs";
 
 let logFilePath: string | null = null;
 
-/** Serialise writes so concurrent requests cannot interleave inside a line. */
 let writeQueue: Promise<void> = Promise.resolve();
 
 function fileNameFor(date: Date): string {
@@ -46,13 +42,6 @@ function enqueueWrite(line: string): void {
     });
 }
 
-/**
- * Structured logging: one JSON object per line, mirrored to stdout for
- * container logs and appended to a timestamped file under `logs/`.
- *
- * The file is named for the moment the process first logged, so a run's
- * entries stay together rather than scattering across files.
- */
 export function log(level: LogLevel, message: string, fields: LogFields = {}): void {
   if (LEVEL_RANK[level] < LEVEL_RANK[LOG_LEVEL]) return;
 
@@ -71,7 +60,6 @@ export function describeError(error: unknown): string {
   return String(error);
 }
 
-/** Where log lines are being written, for startup diagnostics. */
 export function currentLogFile(): string | null {
   return logFilePath;
 }

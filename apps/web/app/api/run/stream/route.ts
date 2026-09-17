@@ -5,10 +5,10 @@ import { runRequestSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-/** Outer bound on the hop to the runner; the runner bounds the program itself. */
+// Outer bound on the hop to the runner; the runner bounds the program itself.
 const RUNNER_TIMEOUT_MS = 60_000;
 
-/** Hard cap on the raw request body, before it is parsed into memory. */
+// Checked before parsing so an oversized body is rejected without buffering it.
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 
 function runnerUrl(): string | null {
@@ -22,14 +22,7 @@ function runnerErrorMessage(payload: unknown): string | null {
   return typeof error === "string" && error.length > 0 ? error : null;
 }
 
-/**
- * POST /api/run/stream — execute a project and relay its output live.
- *
- * The response is newline-delimited JSON: `frame` events while a turtle or
- * tkinter window is being drawn, then one `result` or `error` event. The web
- * process still never runs user code; it pipes the runner's stream straight
- * through.
- */
+// Newline-delimited JSON: frame events while the window is drawn, then one result or error.
 export async function POST(request: Request): Promise<Response> {
   const startedAt = Date.now();
 
@@ -86,8 +79,7 @@ export async function POST(request: Request): Promise<Response> {
   const timeoutController = new AbortController();
   const timer = setTimeout(() => timeoutController.abort(), RUNNER_TIMEOUT_MS);
 
-  // Tear the runner request down if the browser goes away, otherwise the
-  // sandbox would keep drawing for nobody.
+  // Abandon the runner request if the browser goes away, so the sandbox stops drawing.
   const onClientAbort = () => timeoutController.abort();
   request.signal.addEventListener("abort", onClientAbort, { once: true });
 
@@ -148,8 +140,7 @@ export async function POST(request: Request): Promise<Response> {
     request.signal.removeEventListener("abort", onClientAbort);
   };
 
-  // Relay by hand rather than piping, so cancelling the browser side tears the
-  // runner request down instead of leaving the sandbox drawing for nobody.
+  // Relayed by hand so a browser cancel tears the runner request down too.
   const reader = upstream.body.getReader();
   const relay = new ReadableStream<Uint8Array>({
     async pull(controller) {

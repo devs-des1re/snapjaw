@@ -1,10 +1,4 @@
 # syntax=docker/dockerfile:1
-#
-# Build context is the repository root:
-#   docker build -f apps/web/Dockerfile --target runner -t snapjaw-web .
-#
-# Three targets: `builder` compiles the app, `migrator` carries drizzle-kit so
-# migrations can run as their own step, `runner` is the small runtime image.
 
 FROM node:22-slim AS deps
 WORKDIR /repo
@@ -22,9 +16,7 @@ COPY apps/web ./apps/web
 COPY services/sandbox-runner/package.json ./services/sandbox-runner/package.json
 RUN npm run build --workspace @snapjaw/web
 
-# Migrations need drizzle-kit and the generated SQL, nothing else. Deriving this
-# from `builder` works but drags in the whole workspace install (~1.8GB); this
-# installs the version pinned in apps/web/package.json and stays small.
+# Kept separate: deriving from builder would drag in the whole workspace install.
 FROM node:22-slim AS migrator
 WORKDIR /app
 COPY apps/web/package.json ./package.json
@@ -46,8 +38,7 @@ ENV NODE_ENV=production \
 RUN groupadd --system --gid 1001 nodejs \
  && useradd --system --uid 1001 --gid nodejs nextjs
 
-# `output: "standalone"` mirrors the workspace layout, so the server entry is
-# nested under apps/web.
+# Standalone output mirrors the workspace, so the server entry is nested under apps/web.
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/static ./apps/web/.next/static
 

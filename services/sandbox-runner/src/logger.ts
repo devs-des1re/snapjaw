@@ -11,10 +11,7 @@ const LOG_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel | undefined) ?? "
 
 const LEVEL_RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
-/**
- * Fixed, not configurable: a dynamically resolved directory makes the bundler
- * trace the whole project into the output.
- */
+// Must stay a literal: a computed directory makes the bundler trace the whole project.
 const LOG_DIRECTORY = "logs";
 
 let logFilePath: string | null = null;
@@ -44,7 +41,6 @@ function enqueueWrite(line: string): void {
     });
 }
 
-/** Structured logging: one JSON object per line, to stdout and to `logs/`. */
 export function log(level: LogLevel, message: string, fields: LogFields = {}): void {
   if (LEVEL_RANK[level] < LEVEL_RANK[LOG_LEVEL]) return;
 

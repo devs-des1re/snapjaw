@@ -7,10 +7,7 @@ import { cn } from "@/lib/cn";
 export type ButtonVariant = "primary" | "secondary" | "ghost";
 export type ButtonSize = "sm" | "md";
 
-/**
- * Flat by design: solid background or a subtle border, never a box-shadow or
- * glow. Hover and active states are background/opacity shifts only.
- */
+// Flat by design: solid background or subtle border, never a shadow or glow.
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-fg font-medium hover:bg-accent-hover active:bg-accent-active",
   secondary: "border border-line-strong bg-surface text-fg hover:bg-elevated active:bg-panel",

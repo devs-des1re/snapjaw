@@ -23,19 +23,13 @@ export interface ShareBarProps {
 
 type CopyState = "idle" | "copied" | "manual";
 
-/**
- * The inline strip that appears under the tab row when a share is being
- * created, has been created, or failed. No modal and no toast.
- */
 export function ShareBar({ state, onDismiss }: ShareBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [copyState, setCopyState] = useState<CopyState>("idle");
 
   const url = state.status === "shared" ? state.url : null;
 
-  // The user just asked for the link, so put the cursor on it ready to copy.
-  // `copyState` resets on its own because the parent keys this component by
-  // share state — no setState needed in the effect body.
+  // copyState resets on its own because the parent keys this component by share state.
   useEffect(() => {
     if (!url) return;
     const input = inputRef.current;
@@ -57,7 +51,6 @@ export function ShareBar({ state, onDismiss }: ShareBarProps) {
       await navigator.clipboard.writeText(url);
       setCopyState("copied");
     } catch {
-      // Clipboard access can be denied; fall back to leaving it selected.
       inputRef.current?.select();
       setCopyState("manual");
     }

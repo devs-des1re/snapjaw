@@ -1,13 +1,6 @@
 @import "tailwindcss";
 
-/*
- * Snapjaw design tokens.
- * Every colour, space, radius, type size and weight used by the app is declared
- * here and nowhere else. Dark theme only — v1 has no light mode.
- */
 @theme {
-  /* Accent — Snapjaw blue. Used only for the Run button, the active tab
-     border and focus rings. Never as a glow or box-shadow. */
   --color-accent: #0099ff;
   --color-accent-hover: #1fa6ff;
   --color-accent-active: #0088e6;
@@ -19,25 +12,20 @@
   --color-panel: #141920;
   --color-elevated: #1a2028;
 
-  /* Lines */
   --color-line: #232a33;
   --color-line-strong: #333c47;
 
-  /* Text */
   --color-fg: #e6e9ed;
   --color-fg-muted: #98a2ad;
   --color-fg-subtle: #6a737d;
 
-  /* Status */
   --color-danger: #ff6b6b;
   --color-warn: #ffb454;
   --color-ok: #4cd48a;
 
-  /* Type families */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* Type sizes */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;
@@ -45,7 +33,6 @@
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
 
-  /* Type weights */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -55,7 +42,6 @@
   --spacing-menubar: 3rem;
   --spacing-tabbar: 2.5rem;
 
-  /* Radius */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
@@ -80,7 +66,6 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Visible, consistent focus treatment everywhere. An outline, not a glow. */
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;

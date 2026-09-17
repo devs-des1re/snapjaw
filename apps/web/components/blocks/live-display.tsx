@@ -5,23 +5,11 @@ import { useEffect, useRef, type RefObject } from "react";
 import type { LiveFrame } from "@/lib/run";
 
 export interface LiveDisplayProps {
-  /** Holds the newest frame. Deliberately a ref: see below. */
   frameRef: RefObject<LiveFrame | null>;
   className?: string;
 }
 
-/**
- * Paints the newest streamed frame onto a canvas.
- *
- * Frames arrive far faster than React should re-render — routing each one
- * through state made React coalesce them, and roughly two thirds were dropped.
- * Instead the stream writes into a ref and this draws on animation frames, so
- * the canvas shows the latest frame once per display refresh with no React
- * work in the hot path.
- *
- * Only one decode runs at a time; if decoding falls behind, intermediate
- * frames are skipped rather than queued, which keeps latency flat.
- */
+// Frames land in the ref; drawing on animation frames skips any that arrive mid-decode.
 export function LiveDisplay({ frameRef, className }: LiveDisplayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 

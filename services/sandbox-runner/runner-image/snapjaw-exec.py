@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""Snapjaw in-container executor.
-
-Reads one run request as JSON on stdin, executes the entry file in a fresh
-working directory, optionally captures the virtual display as it changes, and
-writes newline-delimited JSON events to stdout.
-
-Two event types go out on stdout:
-
-    {"type": "frame",  "seq": 1, "atMs": 420, "png": "<base64>"}
-    {"type": "result", "ok": true, "stdout": "...", ...}
-
-Frames are flushed as they are captured, so the runner can forward them to the
-browser while the program is still drawing.
-
-The user's program is a child process, so its output can only ever reach the
-pipes this helper holds. It cannot contaminate the event stream on this
-process's stdout.
-"""
+# Runs one JSON run request from stdin and streams NDJSON frame/result events on stdout.
 
 from __future__ import annotations
 
@@ -37,18 +20,16 @@ DISPLAY_NUMBER = 99
 XVFB_READY_TIMEOUT_S = 10.0
 OUTPUT_TRUNCATION_NOTE = "\n[snapjaw] output truncated\n"
 
-# Cached (Image, ImageGrab) modules, False once we know Pillow is unusable.
+# None until we try; False once Pillow is known to be unusable.
 _pillow = None
 
 
 def emit_event(payload: dict) -> None:
-    """Write one NDJSON event and flush, so it leaves the container promptly."""
     sys.stdout.write(json.dumps(payload) + "\n")
     sys.stdout.flush()
 
 
 def emit_frame(seq: int, at_ms: int, payload: bytes, fmt: str = "jpeg") -> None:
-    """Send one frame. `fmt` is `jpeg` on the fast path, `png` on the fallback."""
     emit_event(
         {
             "type": "frame",
@@ -66,7 +47,6 @@ def fail(message: str) -> None:
 
 
 def safe_join(root: str, name: str) -> str:
-    """Materialise `name` under `root`, refusing anything that escapes it."""
     if not name or "/" in name or "\\" in name or name in (".", ".."):
         raise ValueError(f"unsafe file name: {name!r}")
     target = os.path.normpath(os.path.join(root, name))
@@ -76,8 +56,6 @@ def safe_join(root: str, name: str) -> str:
 
 
 class StreamDrain(threading.Thread):
-    """Drain a pipe continuously so the child never blocks on a full buffer."""
-
     def __init__(self, stream, limit: int) -> None:
         super().__init__(daemon=True)
         self.stream = stream
@@ -141,17 +119,6 @@ def start_display(screen: str) -> subprocess.Popen | None:
 
 
 def grab_display(width: int, quality: int):
-    """Grab the display in-process.
-
-    Returns `(stream_jpeg_bytes, full_resolution_image)`, or None when Pillow
-    cannot reach the display.
-
-    Grabbing in-process is what makes a high frame rate possible: shelling out
-    to ImageMagick costs ~130ms per frame, while a grab plus JPEG encode is
-    closer to 7ms. The stream copy is downscaled and lossy for bandwidth; the
-    full-resolution image is kept so the finished run can be saved as a crisp
-    PNG.
-    """
     global _pillow
 
     if _pillow is False:
@@ -184,7 +151,6 @@ def grab_display(width: int, quality: int):
 
 
 def encode_still(image) -> bytes | None:
-    """Encode the full-resolution frame as PNG for the finished run."""
     if image is None:
         return None
     try:
@@ -196,7 +162,6 @@ def encode_still(image) -> bytes | None:
 
 
 def capture_display() -> bytes | None:
-    """Fallback capture via ImageMagick, used when Pillow is unavailable."""
     display = f":{DISPLAY_NUMBER}"
     attempts = (
         ["import", "-display", display, "-window", "root", "png:-"],
@@ -231,11 +196,6 @@ def capture_display() -> bytes | None:
 
 
 def display_has_window() -> bool:
-    """True once a program has actually mapped a top-level window.
-
-    Without this a console-only script that merely mentions turtle in a string
-    would return a screenshot of an empty root window.
-    """
     try:
         result = subprocess.run(
             ["xwininfo", "-display", f":{DISPLAY_NUMBER}", "-root", "-children"],
@@ -252,14 +212,12 @@ def display_has_window() -> bool:
 
 
 def track_stability(current: bytes, previous: bytes | None, stable_since: float | None) -> float | None:
-    """Return when the display last changed, or None if it just did."""
     if previous is not None and current == previous:
         return stable_since if stable_since is not None else time.monotonic()
     return None
 
 
 def stop_process(process: subprocess.Popen) -> None:
-    """Kill the child and everything it spawned."""
     if process.poll() is not None:
         return
     try:
@@ -282,16 +240,12 @@ def run(request: dict) -> dict:
 
     policy = request.get("capturePolicy") or {}
     first_capture_at_ms = int(policy.get("firstCaptureAtMs") or 150)
-    # Settling is measured in time, not frames: at 60fps a frame count that
-    # looked generous at 8fps is only a few milliseconds, and a program that
-    # sleeps between turtle steps would look "finished" almost immediately.
+    # Settling is measured in time, not frames, so a pause between steps is not read as the end.
     stable_ms = max(100, int(policy.get("stableMs") or 600))
     stream_fps = max(1, min(120, int(policy.get("streamFps") or 60)))
     stream_quality = max(20, min(95, int(policy.get("streamQuality") or 60)))
     stream_width = max(0, int(policy.get("streamWidth") or 800))
     capture_interval_ms = 1000.0 / stream_fps
-    # Escape hatch: forces the slower ImageMagick path, which is also how that
-    # fallback is exercised in tests.
     force_fallback = bool(request.get("forceFallbackCapture"))
 
     if entry_file not in files:
@@ -352,9 +306,7 @@ def run(request: dict) -> dict:
     err_drain.start()
 
     previous_frame: bytes | None = None
-    # Fallback still, when Pillow is not driving the capture.
     frame_png: bytes | None = None
-    # Last full-resolution frame, encoded as PNG once the run finishes.
     still_image = None
     timed_out = False
     settled = False
@@ -380,7 +332,6 @@ def run(request: dict) -> dict:
 
             grabbed = None if force_fallback else grab_display(stream_width, stream_quality)
             if grabbed is None:
-                # Pillow is unavailable; fall back to a slower ImageMagick path.
                 still = capture_display()
                 if still is not None and display_has_window():
                     frame_png = still
@@ -396,8 +347,6 @@ def run(request: dict) -> dict:
 
             stream_bytes, image = grabbed
 
-            # Only frames with a mapped window are worth sending: before the
-            # first window appears there is nothing to look at.
             if display_has_window():
                 still_image = image
                 frame_seq += 1
@@ -406,10 +355,6 @@ def run(request: dict) -> dict:
                 stable_since = track_stability(stream_bytes, previous_frame, stable_since)
                 previous_frame = stream_bytes
 
-                # A window that has not changed for a while is a program sitting
-                # in its main loop, so the run can end rather than burn the whole
-                # timeout. Measuring in time keeps a pause between animation
-                # steps from being mistaken for the end.
                 if stable_since is not None and (time.monotonic() - stable_since) * 1000 >= stable_ms:
                     settled = True
                     break
@@ -418,8 +363,6 @@ def run(request: dict) -> dict:
 
     duration_ms = int((time.monotonic() - started) * 1000)
 
-    # About to terminate a program that is still running: take one last look
-    # while its window is still on the display.
     if display_process is not None and process.poll() is None and display_has_window():
         grabbed = None if force_fallback else grab_display(stream_width, stream_quality)
         if grabbed is not None:
@@ -447,8 +390,6 @@ def run(request: dict) -> dict:
 
     exit_code = process.returncode if not timed_out else -1
 
-    # Prefer a crisp PNG of the last full-resolution frame; fall back to
-    # whatever the stream (or ImageMagick) produced.
     still_png = None
     if still_image is not None and hasattr(still_image, "save"):
         still_png = encode_still(still_image)

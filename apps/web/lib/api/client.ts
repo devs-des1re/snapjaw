@@ -1,6 +1,6 @@
 import type { ApiErrorBody } from "@/lib/api/response";
 
-/** Narrow an unknown JSON payload to our error envelope. */
+// Pulls a human-readable message out of an unknown JSON payload.
 export function readApiError(payload: unknown): string | null {
   if (typeof payload !== "object" || payload === null) return null;
 
@@ -16,7 +16,6 @@ export function readApiError(payload: unknown): string | null {
   return message;
 }
 
-/** Narrow an unknown JSON payload to the share URL we expect back. */
 export function readSharedUrl(payload: unknown): string | null {
   if (typeof payload !== "object" || payload === null) return null;
 

@@ -23,7 +23,6 @@ export interface FileTabsProps {
   activeFile: string;
   notice: string | null;
   onSelect: (name: string) => void;
-  /** Create a file and return its generated name, or null if nothing was created. */
   onCreate: () => string | null;
   onOpenFiles: (files: FileList) => void;
   onRename: (from: string, to: string) => RenameOutcome;
@@ -48,9 +47,7 @@ export function FileTabs({
   const [editing, setEditing] = useState<RenameState | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
 
-  // Mirror of `editing` that reads correctly from callbacks running before the
-  // next render, plus a latch so a commit and the blur that follows it cannot
-  // both apply the same rename.
+  // Refs mirror state so a commit and the blur that follows it cannot both apply.
   const editingRef = useRef<RenameState | null>(null);
   const settledRef = useRef(false);
   const tablistRef = useRef<HTMLDivElement>(null);
@@ -151,7 +148,6 @@ export function FileTabs({
     (event: ChangeEvent<HTMLInputElement>) => {
       const list = event.target.files;
       if (list && list.length > 0) onOpenFiles(list);
-      // Allow re-picking the same file later.
       event.target.value = "";
     },
     [onOpenFiles],
@@ -210,7 +206,6 @@ export function FileTabs({
             return (
               <div key={file.name} className="flex shrink-0 items-center">
                 <input
-                  // The user explicitly asked to rename, so taking focus here is correct.
                   autoFocus
                   aria-label={`Rename ${file.name}`}
                   value={editing.draft}

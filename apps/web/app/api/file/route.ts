@@ -6,10 +6,10 @@ import { MAX_TOTAL_CHARACTERS, createSharedFileSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-/** Hard cap on the raw request body, before it is parsed into memory. */
+// Checked before parsing so an oversized body is rejected without buffering it.
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 
-/** POST /api/shared-files — store a project and return its shareable link. */
+// POST /api/file — store a project and return its shareable link.
 export async function POST(request: Request): Promise<Response> {
   const startedAt = Date.now();
 
@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
       const field = issue.path.join(".");
       return field ? `${field}: ${issue.message}` : issue.message;
     });
-    log("warn", "shared file rejected", { details, durationMs: Date.now() - startedAt });
+    log("warn", "file rejected", { details, durationMs: Date.now() - startedAt });
     return jsonError("VALIDATION_ERROR", "Those files could not be shared.", details);
   }
 
@@ -39,9 +39,8 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const record = await createSharedFile({ files, entryFile, fontSize });
-    const url = shareUrlFor(request, record.id);
 
-    log("info", "shared file created", {
+    log("info", "file created", {
       id: record.id,
       fileCount: Object.keys(files).length,
       characters: Object.values(files).reduce((total, content) => total + content.length, 0),
@@ -52,8 +51,8 @@ export async function POST(request: Request): Promise<Response> {
     return jsonOk(
       {
         id: record.id,
-        url,
-        path: `/s/${record.id}`,
+        url: shareUrlFor(request, record.id),
+        path: `/file/${record.id}`,
         entryFile: record.entryFile,
         fontSize: record.fontSize,
         createdAt: record.createdAt.toISOString(),
@@ -61,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
       201,
     );
   } catch (error) {
-    log("error", "shared file creation failed", {
+    log("error", "file creation failed", {
       error: describeError(error),
       durationMs: Date.now() - startedAt,
     });

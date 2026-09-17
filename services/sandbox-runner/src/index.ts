@@ -5,10 +5,6 @@ import { loadConfig } from "./config.js";
 import { describeError, log } from "./logger.js";
 import { PoolManager } from "./pool-manager.js";
 
-/**
- * Pick up a local .env when one is present so `npm run dev` works without
- * exporting variables by hand. Deployments pass env vars directly.
- */
 function loadLocalEnv(): void {
   const load = (process as unknown as { loadEnvFile?: (path: string) => void }).loadEnvFile;
   if (!load) return;

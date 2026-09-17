@@ -1,10 +1,6 @@
 # syntax=docker/dockerfile:1
-#
-# Build context is the repository root:
-#   docker build -f services/sandbox-runner/Dockerfile -t snapjaw-sandbox-runner .
 
-# The docker CLI, copied in rather than installed: the runner drives the host
-# daemon over the mounted socket, so it needs the client and nothing else.
+# Docker CLI stage, copied in rather than installed.
 FROM docker:cli AS dockercli
 
 FROM node:22-slim AS build

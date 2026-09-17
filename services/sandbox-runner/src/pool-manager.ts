@@ -22,7 +22,6 @@ export interface PoolMember {
   state: MemberState;
   runs: number;
   createdAt: number;
-  /** When the current run was handed out, used to reclaim a wedged member. */
   busySince: number | null;
 }
 
@@ -52,33 +51,13 @@ interface Waiter {
 
 const SPAWN_READY_TIMEOUT_MS = 30_000;
 
-/** Grace period for an outgoing runner to drain before we collect its pool. */
 const ORPHAN_SETTLE_MS = 4_000;
 
-/**
- * How many health-check ticks run an orphan sweep.
- *
- * Startup alone misses containers the outgoing runner creates *after* we have
- * swept — it replenishes when it notices its pool disappear, and a hard kill
- * means it never removes the replacements. Sweeping once more a health interval
- * later collects those, by which point the outgoing runner is gone.
- *
- * Bounded on purpose: a lifelong sweep would delete containers a live peer is
- * still executing in, which surfaces as "No such container" mid-run.
- */
+// Bounded: an endless sweep would evict containers a live peer is still running in.
 const SWEEP_TICKS = 2;
 
-/** Marks containers this service owns, so stale ones can be found again. */
 export const SANDBOX_LABEL = "snapjaw.role=sandbox";
 
-/**
- * Containers left behind by a previous run of this service.
- *
- * A runner that is killed hard cannot clean up after itself — `docker compose
- * up` after a redeploy, or a crash — so without this the host accumulates
- * sandbox containers on every deploy. Scoped to the configured name prefix so
- * a second stack on the same host is left alone.
- */
 export function selectOrphanedSandboxes(
   containers: readonly ContainerRef[],
   containerPrefix: string,
@@ -101,7 +80,6 @@ export class PoolManager {
     private readonly logger: Logger = defaultLogger,
   ) {}
 
-  /** Verify the image exists and bring the full pool up. */
   async start(): Promise<void> {
     if (!(await dockerImageExists(this.config.image))) {
       throw new Error(
@@ -128,10 +106,6 @@ export class PoolManager {
     });
   }
 
-  /**
-   * Take an idle container. The caller owns it until `release` is called.
-   * Waits for one to free up rather than starting an unbounded container.
-   */
   async acquire(timeoutMs = this.config.acquireTimeoutMs): Promise<PoolMember> {
     if (this.stopped) throw new PoolUnavailableError("the sandbox pool is shutting down");
 
@@ -168,10 +142,6 @@ export class PoolManager {
     member.busySince = Date.now();
   }
 
-  /**
-   * Reset the container and return it to the pool. A container that cannot be
-   * cleaned is destroyed and replaced rather than reused.
-   */
   async release(member: PoolMember): Promise<void> {
     if (this.stopped) {
       this.members.delete(member.id);
@@ -242,7 +212,6 @@ export class PoolManager {
     return undefined;
   }
 
-  /** Hand idle containers to whoever is waiting for one. */
   private dispatch(): void {
     while (this.waiters.length > 0) {
       const idle = this.findIdle();
@@ -256,18 +225,6 @@ export class PoolManager {
     }
   }
 
-  /**
-   * Remove sandbox containers carrying our prefix that no live runner owns.
-   *
-   * Only ever called at startup, before this instance has created anything, so
-   * the only containers it can see are ones a previous run left behind. It must
-   * NOT run periodically: while a redeploy overlaps, a continuous sweep would
-   * delete containers the outgoing runner is still executing in, which shows up
-   * as "No such container" failures mid-run.
-   *
-   * The settle delay gives an outgoing runner time to drain and remove its own
-   * pool, so we only collect what it genuinely could not clean up.
-   */
   private async sweepOrphans(settleMs: number): Promise<void> {
     if (settleMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, settleMs));
@@ -328,8 +285,7 @@ export class PoolManager {
       busySince: null,
     };
 
-    // Register before waiting for readiness: until it is in the map an orphan
-    // sweep would see a container it does not recognise and delete it.
+    // Register before the readiness wait, or an orphan sweep would delete it as unknown.
     this.members.set(member.id, member);
 
     const deadline = Date.now() + SPAWN_READY_TIMEOUT_MS;
@@ -367,15 +323,6 @@ export class PoolManager {
     }
   }
 
-  /**
-   * Periodically confirm idle containers still respond, and replace any that
-   * do not.
-   *
-   * Busy containers are skipped — except for one that has been held far longer
-   * than any run could legitimately take. That happens if a reset wedges or a
-   * handler dies mid-run, and without reclaiming it the pool would shrink
-   * permanently because a busy member is never health-checked.
-   */
   private async healthCheck(): Promise<void> {
     if (this.healthRunning || this.stopped) return;
     this.healthRunning = true;
@@ -384,7 +331,6 @@ export class PoolManager {
 
     try {
       for (const member of [...this.members.values()]) {
-        // A container that is still coming up is not expected to answer yet.
         if (member.state === "starting") continue;
 
         if (member.state === "busy") {
@@ -409,8 +355,6 @@ export class PoolManager {
         await dockerRemove(member.name);
       }
 
-      // The startup sweep already ran; a couple more ticks collect anything a
-      // departing runner created afterwards, without ever fighting a live peer.
       if (this.sweepsRemaining > 0) {
         this.sweepsRemaining -= 1;
         await this.sweepOrphans(0);

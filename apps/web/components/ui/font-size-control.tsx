@@ -14,7 +14,6 @@ export interface FontSizeControlProps {
   max?: number;
 }
 
-/** Stepper that drives the Monaco editor font size only. */
 export function FontSizeControl({
   value,
   onChange,

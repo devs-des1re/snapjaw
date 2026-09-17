@@ -11,11 +11,8 @@ export interface OutputPanelProps {
   result: RunResult | null;
   isRunning: boolean;
   entryFile: string;
-  /** A failure to reach or use the sandbox, as opposed to the program failing. */
   error?: string | null;
-  /** Newest streamed frame. A ref so 60fps frames bypass React state. */
   liveFrameRef?: RefObject<LiveFrame | null>;
-  /** How many frames have arrived for the run in progress. */
   frameCount?: number;
 }
 
@@ -43,11 +40,9 @@ function statusLine(
   return "idle";
 }
 
-/** A screenshot, sized to fill whatever room the panel has. */
 function CapturedImage({ src, alt, caption }: { src: string; alt: string; caption: string }) {
   return (
     <figure className="flex min-h-0 flex-1 flex-col gap-1.5">
-      {/* A data URL produced by the sandbox, so next/image does not apply. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}

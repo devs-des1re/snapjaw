@@ -1,11 +1,6 @@
 import { APP_VERSION } from "@/lib/version";
 
-/**
- * One error shape and one success shape for the whole API.
- *
- * Success: { ...payload, timestamp, version }
- * Failure: { error: { code, message, details? }, timestamp, version }
- */
+// Errors all share one shape: { error: { code, message, details? }, timestamp, version }
 
 export type ApiErrorCode =
   | "BAD_REQUEST"

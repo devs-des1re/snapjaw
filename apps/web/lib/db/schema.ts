@@ -1,13 +1,6 @@
 import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
-/**
- * A shared project: the user's files plus the editor state needed to reopen
- * them exactly as they were.
- *
- * Shares are immutable snapshots. v1 has no update endpoint, so `updated_at`
- * only ever matches `created_at`; the column exists so a future edit endpoint
- * can bump it. Deletes are soft — reads filter on `deleted_at IS NULL`.
- */
+// Immutable snapshots; deletes are soft, so reads filter `deleted_at IS NULL`.
 export const sharedFiles = pgTable("shared_files", {
   id: uuid("id").primaryKey().defaultRandom(),
   files: jsonb("files").$type<Record<string, string>>().notNull(),

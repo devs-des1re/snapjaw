@@ -5,10 +5,10 @@ import { runRequestSchema, runnerRunResultSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-/** Outer bound on the hop to the runner; the runner bounds the program itself. */
+// Outer bound on the hop to the runner; the runner bounds the program itself.
 const RUNNER_TIMEOUT_MS = 30_000;
 
-/** Hard cap on the raw request body, before it is parsed into memory. */
+// Checked before parsing so an oversized body is rejected without buffering it.
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 
 function runnerUrl(): string | null {
@@ -22,16 +22,10 @@ function runnerErrorMessage(payload: unknown): string | null {
   return typeof error === "string" && error.length > 0 ? error : null;
 }
 
-/**
- * POST /api/run — execute a project in the sandbox and return its output.
- *
- * The web process never runs user code; it forwards to the runner service,
- * which owns the container pool.
- */
 export async function POST(request: Request): Promise<Response> {
   const startedAt = Date.now();
 
-  // Rate limit before parsing so a flood is cheap to reject.
+  // Rate limited before parsing so a flood is cheap to reject.
   const identifier = clientIdentifier(request);
   const limit = await checkRunRateLimit(identifier);
   if (!limit.allowed) {

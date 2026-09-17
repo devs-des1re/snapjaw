@@ -23,13 +23,6 @@ export const DEFAULT_FILES: ProjectFile[] = [{ name: "main.py", content: STARTER
 
 export const DEFAULT_ACTIVE_FILE = "main.py";
 
-/**
- * Reduce arbitrary user input to a safe, flat file name.
- *
- * Directory components are dropped so an imported file can never escape the
- * project, whitespace becomes dashes, and a bare name gets the Python
- * extension. Returns an empty string when nothing usable is left.
- */
 export function normalizeFileName(raw: string): string {
   const base = raw.trim().split(/[\\/]/).pop() ?? "";
   const cleaned = base.replace(/\s+/g, "-").replace(/[^A-Za-z0-9._-]/g, "");
@@ -37,7 +30,6 @@ export function normalizeFileName(raw: string): string {
   return cleaned.includes(".") ? cleaned : `${cleaned}${PYTHON_EXTENSION}`;
 }
 
-/** Append `-2`, `-3`, … until the name is not already taken. */
 export function uniqueFileName(desired: string, existing: readonly string[]): string {
   const taken = new Set(existing.map((name) => name.toLowerCase()));
   if (!taken.has(desired.toLowerCase())) return desired;
@@ -59,12 +51,6 @@ export function nextUntitledName(existing: readonly string[]): string {
 
 export type FileNameCheck = { ok: true; name: string } | { ok: false; error: string };
 
-/**
- * Validate a proposed file name against the current project.
- *
- * `currentName` is the file being renamed, so a no-op rename of `main.py` to
- * `main.py` is not reported as a collision with itself.
- */
 export function checkFileName(
   raw: string,
   existing: readonly string[],
@@ -106,19 +92,12 @@ export function removeFile(files: readonly ProjectFile[], name: string): Project
   return files.filter((file) => file.name !== name);
 }
 
-/** Fall back to the first file when the requested active file is gone. */
 export function resolveActiveFile(files: readonly ProjectFile[], active: string): string {
   if (files.some((file) => file.name === active)) return active;
   return files[0]?.name ?? "";
 }
 
-/**
- * Rebuild a project's file list from a stored share.
- *
- * Postgres `jsonb` does not preserve key order, so tab order is rebuilt
- * deterministically rather than relying on the order the files were saved in:
- * the entry file first, then the rest alphabetically.
- */
+// jsonb does not preserve key order, so tab order is rebuilt: entry file first, then alphabetical.
 export function projectFilesFromRecord(
   files: Record<string, string>,
   entryFile: string,

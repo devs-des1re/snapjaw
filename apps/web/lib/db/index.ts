@@ -19,13 +19,7 @@ function connect() {
   return drizzle(client, { schema });
 }
 
-/**
- * Lazily create the connection so that importing this module never throws.
- * `next build` loads route modules to read their config, and a missing
- * DATABASE_URL must not break the build — only a real query should fail.
- *
- * Cached on globalThis so dev hot reloads reuse one pool.
- */
+// Lazily connected and cached on globalThis: importing must not throw, and hot reloads reuse the pool.
 export function getDb(): Database {
   if (!globalForDb.__snapjawDb) {
     globalForDb.__snapjawDb = connect();

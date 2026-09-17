@@ -28,14 +28,7 @@ function languageForFile(name: string): string {
   return LANGUAGE_BY_EXTENSION[name.slice(dot).toLowerCase()] ?? "plaintext";
 }
 
-/**
- * Monaco ships from npm rather than a CDN, so the editor works with no network
- * access. Only the core editor worker is registered — there is no Python
- * language server, so no other worker is needed.
- *
- * The specifier is relative to the package's exports map, which rebases
- * everything onto `esm/vs/`.
- */
+// The package exports map rebases this specifier onto esm/vs/; only the core worker is needed.
 if (typeof self !== "undefined") {
   (self as unknown as { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = {
     getWorker: () =>
@@ -81,8 +74,6 @@ function defineSnapjawTheme(monacoInstance: Monaco): void {
       "editorSuggestWidget.selectedBackground": "#1a2028",
       "editorBracketMatch.background": "#0099ff1f",
       "editorBracketMatch.border": "#0099ff",
-      // Without these, bracket-pair colourisation falls back to the vs-dark
-      // defaults (gold and friends) and the palette stops being deliberate.
       "editorBracketHighlight.foreground1": "#0099ff",
       "editorBracketHighlight.foreground2": "#4cd48a",
       "editorBracketHighlight.foreground3": "#ffb454",

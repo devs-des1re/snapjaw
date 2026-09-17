@@ -21,7 +21,6 @@ export async function createSharedFile(input: CreateSharedFileInput): Promise<Sh
   return row;
 }
 
-/** Reads always exclude soft-deleted rows. */
 export async function getSharedFileById(id: string): Promise<SharedFileRecord | null> {
   const rows = await getDb()
     .select()

@@ -33,7 +33,7 @@ function storedRow(overrides: Record<string, unknown> = {}) {
 }
 
 function postRequest(body: unknown): Request {
-  return new Request("http://localhost:3000/api/shared-files", {
+  return new Request("http://localhost:3000/api/file", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: typeof body === "string" ? body : JSON.stringify(body),
@@ -41,10 +41,7 @@ function postRequest(body: unknown): Request {
 }
 
 function getRequest(id: string): [Request, { params: Promise<{ id: string }> }] {
-  return [
-    new Request(`http://localhost:3000/api/shared-files/${id}`),
-    { params: Promise.resolve({ id }) },
-  ];
+  return [new Request(`http://localhost:3000/api/file/${id}`), { params: Promise.resolve({ id }) }];
 }
 
 const originalEnv = { ...process.env };
@@ -59,7 +56,7 @@ afterEach(() => {
   process.env = { ...originalEnv };
 });
 
-describe("POST /api/shared-files — saving a project", () => {
+describe("POST /api/file — saving a project", () => {
   it("stores the project and returns a shareable link", async () => {
     createSharedFile.mockResolvedValue(storedRow());
 
@@ -68,8 +65,8 @@ describe("POST /api/shared-files — saving a project", () => {
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.id).toBe(ID);
-    expect(body.url).toBe(`https://snapjaw.test/s/${ID}`);
-    expect(body.path).toBe(`/s/${ID}`);
+    expect(body.url).toBe(`https://snapjaw.test/file/${ID}`);
+    expect(body.path).toBe(`/file/${ID}`);
     expect(body.entryFile).toBe("main.py");
     expect(body.fontSize).toBe(18);
     expect(typeof body.timestamp).toBe("string");
@@ -123,7 +120,7 @@ describe("POST /api/shared-files — saving a project", () => {
   });
 });
 
-describe("GET /api/shared-files/[id] — loading a project", () => {
+describe("GET /api/file/[id] — loading a project", () => {
   it("returns the stored project", async () => {
     getSharedFileById.mockResolvedValue(storedRow());
 

@@ -2,13 +2,11 @@ import { readApiError } from "@/lib/api/client";
 import type { ProjectFile } from "@/lib/project";
 
 export interface RunResult {
-  /** File that was executed. */
   entryFile: string;
   stdout: string;
   stderr: string;
   exitCode: number;
   durationMs: number;
-  /** PNG data URL of the captured turtle/tkinter window, when one was drawn. */
   image: string | null;
   timedOut: boolean;
 }
@@ -18,7 +16,6 @@ export type RunOutcome = { ok: true; result: RunResult } | { ok: false; message:
 export interface LiveFrame {
   seq: number;
   atMs: number;
-  /** Data URL, ready to hand to an image or canvas. */
   src: string;
 }
 
@@ -56,16 +53,7 @@ export function projectToFileRecord(files: readonly ProjectFile[]): Record<strin
   return Object.fromEntries(files.map((file) => [file.name, file.content]));
 }
 
-/**
- * Run a project and stream its display frames back as they are drawn.
- *
- * The response is newline-delimited JSON, so a turtle or tkinter program can
- * be watched live instead of only being photographed at the end. The final
- * result arrives last, exactly like the non-streaming endpoint.
- *
- * Failure is reported as a value rather than a thrown error so the caller can
- * render it in the output panel next to the program's own output.
- */
+// Newline-delimited JSON: frames arrive as they are drawn, the final result last.
 export async function runProjectStreaming(
   files: readonly ProjectFile[],
   entryFile: string,

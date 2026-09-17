@@ -1,0 +1,6 @@
+snapjaw.dev {
+	reverse_proxy web:3000 {
+		# Flush each chunk straight away; the sandbox stream is sent as it is drawn.
+		flush_interval -1
+	}
+}

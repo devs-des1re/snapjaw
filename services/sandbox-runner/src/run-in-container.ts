@@ -22,11 +22,9 @@ export interface ContainerRunResult {
   frameCount: number;
 }
 
-/** One captured display frame, base64 encoded, as it was drawn. */
 export interface LiveFrame {
   seq: number;
   atMs: number;
-  /** `jpeg` on the fast capture path, `png` on the ImageMagick fallback. */
   format: string;
   data: string;
 }
@@ -62,12 +60,6 @@ export class RunFailedError extends Error {
   }
 }
 
-/**
- * Parse one NDJSON line from the helper.
- *
- * Anything that is not a recognisable event is ignored rather than treated as
- * a failure: a stray line must not lose a run whose result is still coming.
- */
 export function parseHelperLine(line: string): HelperEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -97,19 +89,10 @@ function toLiveFrame(event: HelperFrameEvent): LiveFrame | null {
 }
 
 export interface RunOptions {
-  /** Called for each captured display frame, as it is drawn. */
   onFrame?: (frame: LiveFrame) => void;
-  /** Abort the run, e.g. because the browser went away. */
   signal?: AbortSignal;
 }
 
-/**
- * Execute a project inside one pooled container.
- *
- * The helper runs the program as a child process and reports back over a
- * single `docker exec`, so nothing the program prints can be mistaken for the
- * event stream. Frames arrive while the program is still running.
- */
 export async function runInContainer(
   container: string,
   request: RunRequest,
@@ -138,9 +121,7 @@ export async function runInContainer(
     forceFallbackCapture: config.forceFallbackCapture,
   });
 
-  // Collected in an array rather than a `let`: assignments made inside the
-  // stream callback are invisible to control-flow analysis, so a `let` would
-  // be narrowed to `null` for everything after the await.
+  // An array, not a `let`: a `let` assigned only inside the callback stays narrowed to `null`.
   const results: HelperResultEvent[] = [];
 
   const transport = await runDockerStreaming(["exec", "-i", container, "snapjaw-exec"], {
@@ -190,19 +171,11 @@ export async function runInContainer(
   };
 }
 
-/**
- * Return a container to a clean state.
- *
- * The container is mounted read-only, so `/tmp` is the only place a run can
- * write — which makes sweeping it a complete wipe. Orphaned helpers and stray
- * X servers are killed first, then every scratch file goes, then the work root
- * is recreated. The bracketed pkill pattern stops the reset from matching its
- * own command line.
- */
 export async function resetContainer(
   container: string,
   logger: typeof defaultLogger = defaultLogger,
 ): Promise<boolean> {
+  // The bracketed pattern stops pkill from matching its own command line.
   const script = [
     "cd /",
     "pkill -9 -f '[s]napjaw-exec' >/dev/null 2>&1",
@@ -232,7 +205,6 @@ export async function resetContainer(
   }
 }
 
-/** Confirm a container can still start a process. */
 export async function containerAnswers(container: string): Promise<boolean> {
   try {
     const result = await runDocker(["exec", container, "true"], { timeoutMs: 10_000 });

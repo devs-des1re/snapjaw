@@ -5,7 +5,7 @@ import { sharedFileIdSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/shared-files/[id] — fetch one shared project. */
+// GET /api/file/[id] — fetch one shared project.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -15,16 +15,16 @@ export async function GET(
 
   const parsedId = sharedFileIdSchema.safeParse(id);
   if (!parsedId.success) {
-    return jsonError("BAD_REQUEST", "That is not a valid shared file id.");
+    return jsonError("BAD_REQUEST", "That is not a valid file id.");
   }
 
   try {
     const record = await getSharedFileById(parsedId.data);
     if (!record) {
-      return jsonError("NOT_FOUND", "That shared file does not exist.");
+      return jsonError("NOT_FOUND", "That file does not exist.");
     }
 
-    log("info", "shared file read", { id: record.id, durationMs: Date.now() - startedAt });
+    log("info", "file read", { id: record.id, durationMs: Date.now() - startedAt });
 
     return jsonOk({
       id: record.id,
@@ -35,11 +35,11 @@ export async function GET(
       updatedAt: record.updatedAt.toISOString(),
     });
   } catch (error) {
-    log("error", "shared file read failed", {
+    log("error", "file read failed", {
       id: parsedId.data,
       error: describeError(error),
       durationMs: Date.now() - startedAt,
     });
-    return jsonError("INTERNAL_ERROR", "Could not load that shared file. Try again.");
+    return jsonError("INTERNAL_ERROR", "Could not load that file. Try again.");
   }
 }

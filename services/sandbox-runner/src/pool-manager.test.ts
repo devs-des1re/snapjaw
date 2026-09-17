@@ -29,7 +29,6 @@ describe("selectOrphanedSandboxes", () => {
   });
 
   it("does not match a name that merely starts with the prefix characters", () => {
-    // "snapjaw-runnerish-1" must not match the prefix "snapjaw-runner".
     const containers = [{ id: "1", name: "snapjaw-runnerish-1" }];
     expect(selectOrphanedSandboxes(containers, "snapjaw-runner")).toEqual([]);
   });

@@ -39,8 +39,8 @@ describe("readApiError", () => {
 
 describe("readSharedUrl", () => {
   it("reads the url from a create response", () => {
-    expect(readSharedUrl({ id: "abc", url: "http://localhost:3000/s/abc" })).toBe(
-      "http://localhost:3000/s/abc",
+    expect(readSharedUrl({ id: "abc", url: "http://localhost:3000/file/abc" })).toBe(
+      "http://localhost:3000/file/abc",
     );
   });
 

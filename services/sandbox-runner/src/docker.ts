@@ -1,16 +1,6 @@
 import { spawn } from "node:child_process";
 
-/**
- * Thin wrapper over the `docker` CLI.
- *
- * The runner shells out rather than driving the daemon through a client
- * library: the CLI already knows how to reach the socket on every platform,
- * and the runner does no container work beyond `run` and `exec`.
- *
- * Killing the spawned client does NOT reliably stop the process inside the
- * container — SIGKILL cannot be proxied. The pool's reset step is what
- * guarantees a container is clean before it is reused.
- */
+// Killing the spawned client does not stop the process inside the container; the pool's reset does.
 
 const DEFAULT_MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -127,19 +117,10 @@ export async function dockerExec(
 }
 
 export interface StreamingDockerOptions extends DockerOptions {
-  /** Called once per complete stdout line, as it arrives. */
   onStdoutLine?: (line: string) => void;
-  /** Abort the child when this signal fires. */
   signal?: AbortSignal;
 }
 
-/**
- * Run docker and hand back stdout line by line instead of buffering it.
- *
- * This is what makes live frames possible: the in-container helper writes one
- * JSON event per line and flushes, so each frame reaches the browser while the
- * program is still drawing.
- */
 export function runDockerStreaming(
   args: string[],
   options: StreamingDockerOptions = {},
@@ -261,7 +242,7 @@ export async function dockerRemove(container: string): Promise<void> {
   try {
     await runDocker(["rm", "-f", container], { timeoutMs: 30_000 });
   } catch {
-    // Best effort: a container that is already gone is not a problem.
+    // Ignored: removing a container that is already gone is fine.
   }
 }
 
@@ -279,7 +260,6 @@ export interface ContainerRef {
   name: string;
 }
 
-/** Every container carrying the given label, running or not. */
 export async function dockerListContainersByLabel(label: string): Promise<ContainerRef[]> {
   try {
     const result = await runDocker(

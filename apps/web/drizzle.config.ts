@@ -2,10 +2,7 @@ import { existsSync } from "node:fs";
 
 import { defineConfig } from "drizzle-kit";
 
-/**
- * drizzle-kit does not read Next's `.env.local`, so load it here. Node's
- * `process.loadEnvFile` keeps this dependency-free.
- */
+// drizzle-kit does not read Next's `.env.local`, so load it here without adding a dependency.
 const loadEnvFile = (process as unknown as { loadEnvFile?: (path: string) => void }).loadEnvFile;
 if (loadEnvFile) {
   for (const file of [".env.local", ".env"]) {

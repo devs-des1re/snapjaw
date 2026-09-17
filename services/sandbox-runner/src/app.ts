@@ -8,11 +8,7 @@ import { describeError, log } from "./logger.js";
 import { PoolUnavailableError, type PoolManager } from "./pool-manager.js";
 import { RunFailedError, runInContainer } from "./run-in-container.js";
 
-/**
- * Deliberately looser than the web app's sharing limits. The web layer owns
- * the user-facing policy; these are the backstop for anything that reaches
- * the runner directly, so the two do not have to stay in lockstep.
- */
+// Backstop only: the web layer owns the user-facing limits.
 const BACKSTOP_MAX_FILES = 50;
 const BACKSTOP_MAX_FILE_CHARACTERS = 256 * 1024;
 const BACKSTOP_MAX_TOTAL_CHARACTERS = 1024 * 1024;
@@ -53,10 +49,6 @@ function tokenMatches(expected: string, provided: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-/**
- * Optional shared secret between the web app and this service. Off unless
- * SANDBOX_RUNNER_TOKEN is set on both sides.
- */
 function requireToken(config: RunnerConfig) {
   return (request: Request, response: Response, next: NextFunction): void => {
     if (!config.token) {
@@ -93,10 +85,6 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
     response.json(pool.snapshot());
   });
 
-  /**
-   * Same contract as /run, but frames are written as they are captured so the
-   * browser can watch a turtle or tkinter program draw in real time.
-   */
   app.post("/run/stream", requireToken(config), async (request, response) => {
     const parsed = runRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -120,8 +108,7 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
       throw error;
     }
 
-    // `no-transform` and the X-Accel header keep proxies from buffering the
-    // stream, which would defeat the whole point.
+    // Without these headers a proxy would buffer the stream.
     response.status(200);
     response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
     response.setHeader("Cache-Control", "no-store, no-transform");
