@@ -24,7 +24,7 @@ import {
   updateFileContent,
   type ProjectFile,
 } from "@/lib/project";
-import { runProject, type RunResult } from "@/lib/run";
+import { runProjectStreaming, type LiveFrame, type RunResult } from "@/lib/run";
 
 /**
  * Monaco only exists in the browser, so the editor is loaded on the client.
@@ -65,6 +65,8 @@ export function EditorWorkspace({
   const [fontSize, setFontSize] = useState<number>(initialFontSize);
   const [result, setResult] = useState<RunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [liveFrame, setLiveFrame] = useState<LiveFrame | null>(null);
+  const [frameCount, setFrameCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
@@ -73,8 +75,8 @@ export function EditorWorkspace({
   const active = files.find((file) => file.name === activeFile) ?? files[0] ?? NO_FILE;
 
   // A captured turtle/tkinter window needs the room to be legible, so the
-  // output panel grows when there is one to show.
-  const hasImage = result?.image != null;
+  // output panel grows when there is one to show — live or final.
+  const hasImage = result?.image != null || liveFrame != null;
 
   const handleSelect = useCallback((name: string) => {
     setActiveFile(name);
@@ -156,15 +158,28 @@ export function EditorWorkspace({
     if (isRunning) return;
     setIsRunning(true);
     setRunError(null);
+    setResult(null);
+    setLiveFrame(null);
+    setFrameCount(0);
+
     try {
-      const outcome = await runProject(files, active.name);
+      const outcome = await runProjectStreaming(files, active.name, {
+        // Frames land here while the program is still drawing, so a turtle or
+        // tkinter window can be watched rather than only photographed.
+        onFrame: (frame) => {
+          setLiveFrame(frame);
+          setFrameCount((count) => count + 1);
+        },
+      });
+
       if (outcome.ok) {
         setResult(outcome.result);
       } else {
-        setResult(null);
         setRunError(outcome.message);
       }
     } finally {
+      // The final image takes over from the live one, in the same render.
+      setLiveFrame(null);
       setIsRunning(false);
     }
   }, [files, active.name, isRunning]);
@@ -270,6 +285,8 @@ export function EditorWorkspace({
             isRunning={isRunning}
             entryFile={active.name}
             error={runError}
+            liveFrame={liveFrame}
+            frameCount={frameCount}
           />
         </div>
       </main>

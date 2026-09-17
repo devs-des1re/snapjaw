@@ -1,6 +1,6 @@
 {
   "name": "snapjaw",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "A Trinket-style online Python editor with real sandboxed execution. Write code, run it, share the link.",
   "license": "MIT",

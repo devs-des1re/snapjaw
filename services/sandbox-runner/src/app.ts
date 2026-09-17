@@ -93,6 +93,94 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
     response.json(pool.snapshot());
   });
 
+  /**
+   * Same contract as /run, but frames are written as they are captured so the
+   * browser can watch a turtle or tkinter program draw in real time.
+   */
+  app.post("/run/stream", requireToken(config), async (request, response) => {
+    const parsed = runRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({
+        error: "invalid run request",
+        details: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+      });
+      return;
+    }
+
+    const startedAt = Date.now();
+    let member;
+    try {
+      member = await pool.acquire();
+    } catch (error) {
+      if (error instanceof PoolUnavailableError) {
+        log("warn", "stream rejected, no sandbox available", { error: error.message });
+        response.status(503).json({ error: "every sandbox is busy, try again shortly" });
+        return;
+      }
+      throw error;
+    }
+
+    // `no-transform` and the X-Accel header keep proxies from buffering the
+    // stream, which would defeat the whole point.
+    response.status(200);
+    response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    response.setHeader("Cache-Control", "no-store, no-transform");
+    response.setHeader("X-Accel-Buffering", "no");
+    response.flushHeaders();
+
+    const controller = new AbortController();
+    let clientGone = false;
+    request.on("close", () => {
+      clientGone = true;
+      controller.abort();
+    });
+
+    const write = (payload: unknown): void => {
+      if (clientGone || response.writableEnded) return;
+      response.write(`${JSON.stringify(payload)}\n`);
+    };
+
+    try {
+      const result = await runInContainer(member.name, parsed.data, config, {
+        signal: controller.signal,
+        onFrame: (frame) => {
+          write({ type: "frame", seq: frame.seq, atMs: frame.atMs, png: frame.png });
+        },
+      });
+
+      write({ type: "result", entryFile: parsed.data.entryFile, ...result });
+
+      log("info", "streamed run completed", {
+        entryFile: parsed.data.entryFile,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        frames: result.frameCount,
+        programMs: result.durationMs,
+        wallMs: Date.now() - startedAt,
+        container: member.name,
+      });
+    } catch (error) {
+      if (clientGone) {
+        log("info", "streaming run abandoned by the client", {
+          entryFile: parsed.data.entryFile,
+          wallMs: Date.now() - startedAt,
+        });
+      } else {
+        const message =
+          error instanceof RunFailedError ? error.message : "the sandbox failed during the run";
+        write({ type: "error", message });
+        log("error", "streamed run failed", {
+          entryFile: parsed.data.entryFile,
+          container: member.name,
+          error: describeError(error),
+        });
+      }
+    } finally {
+      await pool.release(member);
+      if (!response.writableEnded) response.end();
+    }
+  });
+
   app.post("/run", requireToken(config), async (request, response) => {
     const parsed = runRequestSchema.safeParse(request.body);
     if (!parsed.success) {

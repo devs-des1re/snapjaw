@@ -12,9 +12,10 @@ sandboxed container — turtle and tkinter output included — and share your fi
 
 ## Status
 
-Phase 3 of 4 is complete: real sandboxed execution. **Run** now executes Python in a disposable
-container and returns genuine stdout, stderr and exit codes, with turtle and tkinter windows
-captured as screenshots.
+Phase 3 of 4 is complete: real sandboxed execution. **Run** executes Python in a disposable
+container and returns genuine stdout, stderr and exit codes. Turtle and tkinter programs are
+**streamed live** into the output panel as they draw, and the last frame stays on screen
+afterwards.
 
 | Phase | Scope                             | State |
 | ----- | --------------------------------- | ----- |
@@ -50,28 +51,33 @@ Requires Node.js 20.9 or newer, a Postgres database, and Docker.
 
 ```bash
 npm install
-npm run image:build --workspace @snapjaw/sandbox-runner   # build the sandbox image
-npm run db:migrate                                        # after setting DATABASE_URL
-npm run dev                                               # web app on :3000
-npm run dev --workspace @snapjaw/sandbox-runner           # runner on :4000
+npm run image:build   # build the sandbox image (once, or after editing runner-image/)
+npm run db:migrate    # after setting DATABASE_URL
+npm run dev:all       # runner on :4000 and the web app on :3000
 ```
+
+`npm run dev` starts the web app alone, which is enough for editing and sharing but leaves **Run**
+reporting that the sandbox is unavailable — execution lives in the separate runner service. Use
+`npm run dev:all` for both, or `npm run dev` and `npm run dev:runner` in two terminals.
 
 Environment variables live in `.env.example` files (committed) alongside git-ignored `.env.local`
 files. Neither contains comments — the key names are the documentation.
 
-| Variable               | Where  | Purpose                                                                                               |
-| ---------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`         | web    | Postgres connection string. Required.                                                                 |
-| `APP_URL`              | web    | Public origin used to build share links. Falls back to the request's forwarded host, then its origin. |
-| `SANDBOX_RUNNER_URL`   | web    | Base URL of the runner service. Required for Run.                                                     |
-| `SANDBOX_RUNNER_TOKEN` | both   | Optional shared secret. When set on both sides, `/run` requires it.                                   |
-| `UPSTASH_REDIS_REST_*` | web    | Enables rate limiting on `/api/run`. Without them the limiter is disabled and logs a warning.         |
-| `RUN_RATE_LIMIT`       | web    | Runs allowed per window. Default `10`.                                                                |
-| `RUN_RATE_WINDOW`      | web    | Rate limit window. Default `1 m`.                                                                     |
-| `SANDBOX_POOL_SIZE`    | runner | Warm containers to keep. Default `3`.                                                                 |
-| `SANDBOX_TIMEOUT_MS`   | runner | Wall clock per program. Default `5000`.                                                               |
-| `SANDBOX_MEMORY`       | runner | Per-container memory cap. Default `256m`.                                                             |
-| `SANDBOX_CPUS`         | runner | Per-container CPU cap. Default `1`.                                                                   |
+| Variable                      | Where  | Purpose                                                                                               |
+| ----------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | web    | Postgres connection string. Required.                                                                 |
+| `APP_URL`                     | web    | Public origin used to build share links. Falls back to the request's forwarded host, then its origin. |
+| `SANDBOX_RUNNER_URL`          | web    | Base URL of the runner service. Required for Run.                                                     |
+| `SANDBOX_RUNNER_TOKEN`        | both   | Optional shared secret. When set on both sides, `/run` requires it.                                   |
+| `UPSTASH_REDIS_REST_*`        | web    | Enables rate limiting on `/api/run`. Without them the limiter is disabled and logs a warning.         |
+| `RUN_RATE_LIMIT`              | web    | Runs allowed per window. Default `10`.                                                                |
+| `RUN_RATE_WINDOW`             | web    | Rate limit window. Default `1 m`.                                                                     |
+| `SANDBOX_POOL_SIZE`           | runner | Warm containers to keep. Default `3`.                                                                 |
+| `SANDBOX_TIMEOUT_MS`          | runner | Wall clock per program. Default `10000`.                                                              |
+| `SANDBOX_MEMORY`              | runner | Per-container memory cap. Default `256m`.                                                             |
+| `SANDBOX_CPUS`                | runner | Per-container CPU cap. Default `1`.                                                                   |
+| `SANDBOX_CAPTURE_INTERVAL_MS` | runner | Live frame interval. Default `120`.                                                                   |
+| `SANDBOX_STABLE_FRAMES`       | runner | Identical frames before a run counts as finished drawing. Default `3`.                                |
 
 `APP_URL` is deliberately **not** prefixed `NEXT_PUBLIC_`. That prefix gets inlined at build time,
 which would bake one environment's URL into every deployment.
@@ -112,9 +118,16 @@ failures always use the same shape:
 | ------ | ------------------------ | ----------------------------------------------------------------- |
 | `GET`  | `/api/health`            | `{ "status": "ok" }`. Liveness only — never touches the database. |
 | `GET`  | `/api/ping`              | `{ "pong": true, "latencyMs": n }` — server handling time.        |
-| `POST` | `/api/run`               | Execute a project. Rate limited. Returns the run result.          |
+| `POST` | `/api/run`               | Execute a project, wait, return the result as JSON.               |
+| `POST` | `/api/run/stream`        | Execute a project and relay display frames live.                  |
 | `POST` | `/api/shared-files`      | Store a project, return `{ id, url, path }`. `201`.               |
 | `GET`  | `/api/shared-files/[id]` | Fetch a shared project. `404` if absent or soft-deleted.          |
+
+`/api/run/stream` responds with newline-delimited JSON:
+`{"type":"frame","seq":n,"atMs":n,"png":"<base64>"}` while a turtle or tkinter window is being
+drawn, then exactly one `{"type":"result",...}` or `{"type":"error",...}`. Console programs simply
+produce no frames. The editor uses this endpoint; `/api/run` stays as the simple blocking call for
+scripts.
 
 Validation is Zod on every request body. Status codes: `400` malformed or invalid, `404` missing,
 `413` oversized, `429` rate limited, `502` the sandbox failed, `503` the sandbox is unavailable,
@@ -122,7 +135,7 @@ Validation is Zod on every request body. Status codes: `400` malformed or invali
 
 ## The sandbox
 
-A run goes: editor → `POST /api/run` → the runner service → `docker exec` into a warm container.
+A run goes: editor → `/api/run/stream` → the runner service → `docker exec` into a warm container.
 The Next.js process never executes user code.
 
 ### Warm container pool
@@ -164,14 +177,22 @@ project's files cannot be observed by the next one.
 private Xvfb, runs the program with `DISPLAY` pointed at it, and screenshots the root window with
 ImageMagick.
 
-The executor samples the display repeatedly and stops as soon as two consecutive frames are
-identical — a window that has stopped changing is a program sitting in its main loop, and there is
-no reason to burn the whole timeout on it. A frame is only accepted when a window has actually been
-mapped, so a console program cannot come back with a screenshot of an empty display.
+**Frames stream live.** The executor writes each capture to stdout as it happens and flushes, the
+runner relays it over the same connection, and the web layer pipes it straight through to the
+browser — so a turtle drawing is watched as it draws, not just photographed at the end. Around
+8 frames per second at the default 120 ms interval; capturing is the floor, so lowering the interval
+further will not buy much. The last frame is also returned as the run's still image.
+
+A frame is only accepted once a window has actually been mapped, so a console program cannot come
+back with a screenshot of an empty display.
+
+The run ends when the drawing stops: three consecutive identical frames mean the program is sitting
+in its main loop, and there is no reason to burn the whole timeout on it. Requiring several stable
+frames keeps a pause in a slow animation from cutting it short.
 
 **Programs must keep their window open to be captured.** Call `turtle.done()` or `root.mainloop()`.
 Without it the interpreter exits, Tk destroys the window, and there is nothing left to photograph —
-the same thing that happens on a desktop.
+the same thing that happens on a desktop. The streamed frames up to that point are still delivered.
 
 ### Docker access: socket mount, not DinD
 

@@ -14,6 +14,7 @@ export interface RunnerConfig {
   tmpfsSize: string;
   firstCaptureAtMs: number;
   captureIntervalMs: number;
+  stableFramesRequired: number;
   token: string | null;
 }
 
@@ -41,15 +42,16 @@ export function loadConfig(env: Env = process.env): RunnerConfig {
     poolSize: readInt(env, "SANDBOX_POOL_SIZE", 3, 1),
     acquireTimeoutMs: readInt(env, "SANDBOX_ACQUIRE_TIMEOUT_MS", 15000, 0),
     healthIntervalMs: readInt(env, "SANDBOX_HEALTH_INTERVAL_MS", 15000, 1000),
-    runTimeoutMs: readInt(env, "SANDBOX_TIMEOUT_MS", 5000, 100),
+    runTimeoutMs: readInt(env, "SANDBOX_TIMEOUT_MS", 10000, 100),
     maxOutputBytes: readInt(env, "SANDBOX_MAX_OUTPUT_BYTES", 65536, 1024),
     memoryLimit: readString(env, "SANDBOX_MEMORY", "256m"),
     cpuLimit: readString(env, "SANDBOX_CPUS", "1"),
     pidsLimit: readInt(env, "SANDBOX_PIDS_LIMIT", 128, 8),
     screen: readString(env, "SANDBOX_DISPLAY", "1024x768x24"),
     tmpfsSize: readString(env, "SANDBOX_TMPFS_SIZE", "128m"),
-    firstCaptureAtMs: readInt(env, "SANDBOX_FIRST_CAPTURE_MS", 400),
-    captureIntervalMs: readInt(env, "SANDBOX_CAPTURE_INTERVAL_MS", 400, 50),
+    firstCaptureAtMs: readInt(env, "SANDBOX_FIRST_CAPTURE_MS", 150),
+    captureIntervalMs: readInt(env, "SANDBOX_CAPTURE_INTERVAL_MS", 120, 30),
+    stableFramesRequired: readInt(env, "SANDBOX_STABLE_FRAMES", 3, 1),
     token: env.SANDBOX_RUNNER_TOKEN?.trim() || null,
   };
 }

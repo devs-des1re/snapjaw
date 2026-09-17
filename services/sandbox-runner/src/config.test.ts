@@ -11,10 +11,14 @@ describe("loadConfig", () => {
     expect(config.port).toBe(4000);
     expect(config.image).toBe("snapjaw-runner:latest");
     expect(config.poolSize).toBe(3);
-    expect(config.runTimeoutMs).toBe(5000);
+    expect(config.runTimeoutMs).toBe(10000);
     expect(config.memoryLimit).toBe("256m");
     expect(config.cpuLimit).toBe("1");
     expect(config.token).toBeNull();
+  });
+
+  it("gives a live animation long enough to be watched", () => {
+    expect(loadConfig(MINIMAL).runTimeoutMs).toBeGreaterThanOrEqual(10000);
   });
 
   it("reads overrides from the environment", () => {

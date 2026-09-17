@@ -3,7 +3,7 @@
 import { Icon } from "@iconify/react";
 import terminalIcon from "@iconify-icons/lucide/terminal";
 
-import type { RunResult } from "@/lib/run";
+import type { LiveFrame, RunResult } from "@/lib/run";
 
 export interface OutputPanelProps {
   result: RunResult | null;
@@ -11,15 +11,23 @@ export interface OutputPanelProps {
   entryFile: string;
   /** A failure to reach or use the sandbox, as opposed to the program failing. */
   error?: string | null;
+  /** The most recent display frame, while the program is still drawing. */
+  liveFrame?: LiveFrame | null;
+  /** How many frames have arrived for the run in progress. */
+  frameCount?: number;
 }
 
 function statusLine(
   result: RunResult | null,
   isRunning: boolean,
   entryFile: string,
-  error?: string | null,
+  error: string | null | undefined,
+  frameCount: number,
 ): string {
-  if (isRunning) return `running ${entryFile}`;
+  if (isRunning) {
+    return frameCount > 0 ? `running ${entryFile} · ${frameCount} frames` : `running ${entryFile}`;
+  }
+
   if (error) return "run failed";
 
   if (result) {
@@ -33,7 +41,30 @@ function statusLine(
   return "idle";
 }
 
-export function OutputPanel({ result, isRunning, entryFile, error }: OutputPanelProps) {
+/** A screenshot, sized to fill whatever room the panel has. */
+function CapturedImage({ src, alt, caption }: { src: string; alt: string; caption: string }) {
+  return (
+    <figure className="flex min-h-0 flex-1 flex-col gap-1.5">
+      {/* A data URL produced by the sandbox, so next/image does not apply. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="min-h-0 w-auto max-w-full flex-1 self-start rounded-md border border-line object-contain"
+      />
+      <figcaption className="shrink-0 text-2xs text-fg-subtle">{caption}</figcaption>
+    </figure>
+  );
+}
+
+export function OutputPanel({
+  result,
+  isRunning,
+  entryFile,
+  error,
+  liveFrame,
+  frameCount = 0,
+}: OutputPanelProps) {
   return (
     <section aria-label="Program output" className="flex h-full min-h-0 flex-col bg-canvas">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
@@ -43,19 +74,37 @@ export function OutputPanel({ result, isRunning, entryFile, error }: OutputPanel
           aria-live="polite"
           className="ml-auto truncate font-mono text-2xs text-fg-subtle tabular-nums"
         >
-          {statusLine(result, isRunning, entryFile, error)}
+          {statusLine(result, isRunning, entryFile, error, frameCount)}
         </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <OutputBody result={result} isRunning={isRunning} entryFile={entryFile} error={error} />
+        <OutputBody
+          result={result}
+          isRunning={isRunning}
+          entryFile={entryFile}
+          error={error}
+          liveFrame={liveFrame}
+        />
       </div>
     </section>
   );
 }
 
-function OutputBody({ result, isRunning, entryFile, error }: OutputPanelProps) {
+function OutputBody({ result, isRunning, entryFile, error, liveFrame }: OutputPanelProps) {
   if (isRunning) {
+    if (liveFrame) {
+      return (
+        <div className="flex h-full min-h-0 flex-col p-3">
+          <CapturedImage
+            src={liveFrame.src}
+            alt="Live view of the program's virtual display"
+            caption={`Live · frame ${liveFrame.seq} · ${liveFrame.atMs} ms`}
+          />
+        </div>
+      );
+    }
+
     return <p className="p-3 font-mono text-sm text-fg-muted">Running {entryFile}…</p>;
   }
 
@@ -78,16 +127,11 @@ function OutputBody({ result, isRunning, entryFile, error }: OutputPanelProps) {
   if (result.image) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-        <figure className="flex min-h-0 flex-1 flex-col gap-1.5">
-          {/* A data URL produced by the sandbox, so next/image does not apply. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={result.image}
-            alt="Window captured from the program's virtual display"
-            className="min-h-0 w-auto max-w-full flex-1 self-start rounded-md border border-line object-contain"
-          />
-          <figcaption className="shrink-0 text-2xs text-fg-subtle">Captured display</figcaption>
-        </figure>
+        <CapturedImage
+          src={result.image}
+          alt="Window captured from the program's virtual display"
+          caption="Captured display"
+        />
 
         {result.stdout ? (
           <pre className="shrink-0 font-mono text-sm break-words whitespace-pre-wrap text-fg">

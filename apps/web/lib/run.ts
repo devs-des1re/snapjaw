@@ -15,8 +15,15 @@ export interface RunResult {
 
 export type RunOutcome = { ok: true; result: RunResult } | { ok: false; message: string };
 
-export function projectToFileRecord(files: readonly ProjectFile[]): Record<string, string> {
-  return Object.fromEntries(files.map((file) => [file.name, file.content]));
+export interface LiveFrame {
+  seq: number;
+  atMs: number;
+  /** PNG data URL, ready to hand to an <img>. */
+  src: string;
+}
+
+export interface StreamHandlers {
+  onFrame?: (frame: LiveFrame) => void;
 }
 
 function readRunResult(payload: unknown): RunResult | null {
@@ -45,42 +52,112 @@ function readRunResult(payload: unknown): RunResult | null {
   };
 }
 
+export function projectToFileRecord(files: readonly ProjectFile[]): Record<string, string> {
+  return Object.fromEntries(files.map((file) => [file.name, file.content]));
+}
+
 /**
- * Run a project in the sandbox and return its output.
+ * Run a project and stream its display frames back as they are drawn.
+ *
+ * The response is newline-delimited JSON, so a turtle or tkinter program can
+ * be watched live instead of only being photographed at the end. The final
+ * result arrives last, exactly like the non-streaming endpoint.
  *
  * Failure is reported as a value rather than a thrown error so the caller can
  * render it in the output panel next to the program's own output.
  */
-export async function runProject(
+export async function runProjectStreaming(
   files: readonly ProjectFile[],
   entryFile: string,
+  handlers: StreamHandlers = {},
 ): Promise<RunOutcome> {
+  let response: Response;
   try {
-    const response = await fetch("/api/run", {
+    response = await fetch("/api/run/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ files: projectToFileRecord(files), entryFile }),
     });
-
-    const payload: unknown = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        message: readApiError(payload) ?? `The sandbox returned status ${response.status}.`,
-      };
-    }
-
-    const result = readRunResult(payload);
-    if (!result) {
-      return { ok: false, message: "The sandbox returned an unexpected response." };
-    }
-
-    return { ok: true, result };
   } catch {
+    return { ok: false, message: "Could not reach Snapjaw. Check your connection and try again." };
+  }
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
     return {
       ok: false,
-      message: "Could not reach Snapjaw. Check your connection and try again.",
+      message: readApiError(payload) ?? `The sandbox returned status ${response.status}.`,
     };
   }
+
+  if (!response.body) {
+    return { ok: false, message: "The sandbox returned an empty response." };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let result: RunResult | null = null;
+  let failure: string | null = null;
+
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      return;
+    }
+
+    if (typeof event !== "object" || event === null) return;
+    const { type } = event as { type?: unknown };
+
+    if (type === "frame") {
+      const { png, seq, atMs } = event as { png?: unknown; seq?: unknown; atMs?: unknown };
+      if (typeof png === "string" && png.length > 0) {
+        handlers.onFrame?.({
+          seq: typeof seq === "number" ? seq : 0,
+          atMs: typeof atMs === "number" ? atMs : 0,
+          src: `data:image/png;base64,${png}`,
+        });
+      }
+      return;
+    }
+
+    if (type === "error") {
+      const { message } = event as { message?: unknown };
+      failure = typeof message === "string" ? message : "The sandbox failed during the run.";
+      return;
+    }
+
+    if (type === "result") {
+      result = readRunResult(event);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      pending += decoder.decode(value, { stream: true });
+      let index = pending.indexOf("\n");
+      while (index !== -1) {
+        handleLine(pending.slice(0, index));
+        pending = pending.slice(index + 1);
+        index = pending.indexOf("\n");
+      }
+    }
+    handleLine(pending);
+  } catch {
+    return { ok: false, message: "The connection to the sandbox was lost." };
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (failure) return { ok: false, message: failure };
+  if (!result) return { ok: false, message: "The sandbox returned an unexpected response." };
+  return { ok: true, result };
 }

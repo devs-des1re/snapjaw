@@ -50,11 +50,15 @@ describe("projectNeedsDisplay", () => {
 });
 
 describe("DEFAULT_CAPTURE_POLICY", () => {
-  it("waits long enough for Tk to map a window before the first capture", () => {
-    expect(DEFAULT_CAPTURE_POLICY.firstCaptureAtMs).toBeGreaterThanOrEqual(300);
+  it("samples often enough to look like live animation", () => {
+    expect(DEFAULT_CAPTURE_POLICY.captureIntervalMs).toBeLessThanOrEqual(200);
   });
 
-  it("samples more than once so identical frames can be detected", () => {
-    expect(DEFAULT_CAPTURE_POLICY.captureIntervalMs).toBeLessThanOrEqual(500);
+  it("starts capturing soon after the program begins", () => {
+    expect(DEFAULT_CAPTURE_POLICY.firstCaptureAtMs).toBeLessThanOrEqual(300);
+  });
+
+  it("requires several stable frames so a pause mid-animation does not end a run", () => {
+    expect(DEFAULT_CAPTURE_POLICY.stableFramesRequired).toBeGreaterThanOrEqual(3);
   });
 });

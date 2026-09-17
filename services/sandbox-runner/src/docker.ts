@@ -126,6 +126,126 @@ export async function dockerExec(
   return runDocker(["exec", "-i", container, ...command], options);
 }
 
+export interface StreamingDockerOptions extends DockerOptions {
+  /** Called once per complete stdout line, as it arrives. */
+  onStdoutLine?: (line: string) => void;
+  /** Abort the child when this signal fires. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Run docker and hand back stdout line by line instead of buffering it.
+ *
+ * This is what makes live frames possible: the in-container helper writes one
+ * JSON event per line and flushes, so each frame reaches the browser while the
+ * program is still drawing.
+ */
+export function runDockerStreaming(
+  args: string[],
+  options: StreamingDockerOptions = {},
+): Promise<DockerResult> {
+  const {
+    input,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxBufferBytes = DEFAULT_MAX_BUFFER_BYTES,
+    onStdoutLine,
+    signal,
+  } = options;
+
+  return new Promise<DockerResult>((resolve, reject) => {
+    const child = spawn("docker", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    const errChunks: Buffer[] = [];
+    let errBytes = 0;
+    let timedOut = false;
+    let settled = false;
+
+    let pending = "";
+    let droppedBytes = 0;
+
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGKILL");
+          }, timeoutMs)
+        : null;
+
+    const finish = (action: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      action();
+    };
+
+    function onAbort() {
+      child.kill("SIGKILL");
+      finish(() => reject(new Error("aborted")));
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        child.kill("SIGKILL");
+        finish(() => reject(new Error("aborted")));
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (droppedBytes > 0 || !onStdoutLine) {
+        droppedBytes += chunk.length;
+        return;
+      }
+
+      pending += chunk.toString("utf8");
+      let index = pending.indexOf("\n");
+      while (index !== -1) {
+        const line = pending.slice(0, index);
+        pending = pending.slice(index + 1);
+        if (line.length > 0) onStdoutLine(line);
+        index = pending.indexOf("\n");
+      }
+
+      if (pending.length > maxBufferBytes) {
+        droppedBytes += pending.length;
+        pending = "";
+      }
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (errBytes >= maxBufferBytes) return;
+      errChunks.push(chunk);
+      errBytes += chunk.length;
+    });
+
+    child.on("error", (error) => {
+      finish(() => reject(error));
+    });
+
+    child.on("close", (code) => {
+      finish(() => {
+        if (pending.length > 0 && onStdoutLine) onStdoutLine(pending);
+        resolve({
+          code: code ?? -1,
+          stdout: droppedBytes > 0 ? `[snapjaw] dropped ${droppedBytes} bytes of stdout` : "",
+          stderr: Buffer.concat(errChunks).toString("utf8"),
+          timedOut,
+        });
+      });
+    });
+
+    child.stdin.on("error", () => {
+      // The child can exit before reading stdin; close reports it.
+    });
+    child.stdin.end(input ?? "");
+  });
+}
+
 export async function dockerIsRunning(container: string): Promise<boolean> {
   try {
     const result = await runDocker(["inspect", "-f", "{{.State.Running}}", container], {

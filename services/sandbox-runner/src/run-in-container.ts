@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { DEFAULT_CAPTURE_POLICY, projectNeedsDisplay } from "./capture-display.js";
 import { transportTimeoutMs, type RunnerConfig } from "./config.js";
-import { DockerError, dockerExec, runDocker } from "./docker.js";
+import { DockerError, dockerExec, runDocker, runDockerStreaming } from "./docker.js";
 import { describeError, log as defaultLogger } from "./logger.js";
-
-const RESULT_SENTINEL = "__SNAPJAW_RESULT__";
 
 export interface RunRequest {
   files: Record<string, string>;
@@ -21,9 +19,18 @@ export interface ContainerRunResult {
   timedOut: boolean;
   image: string | null;
   hadDisplay: boolean;
+  frameCount: number;
 }
 
-interface HelperResponse {
+/** One captured display frame, base64 PNG, as it was drawn. */
+export interface LiveFrame {
+  seq: number;
+  atMs: number;
+  png: string;
+}
+
+interface HelperResultEvent {
+  type: "result";
   ok?: boolean;
   error?: string;
   stdout?: string;
@@ -33,7 +40,17 @@ interface HelperResponse {
   timedOut?: boolean;
   image?: string | null;
   hadDisplay?: boolean;
+  frameCount?: number;
 }
+
+interface HelperFrameEvent {
+  type: "frame";
+  seq?: number;
+  atMs?: number;
+  png?: string;
+}
+
+export type HelperEvent = HelperResultEvent | HelperFrameEvent;
 
 export class RunFailedError extends Error {
   constructor(message: string) {
@@ -42,20 +59,44 @@ export class RunFailedError extends Error {
   }
 }
 
-export function parseHelperOutput(stdout: string): HelperResponse | null {
-  const index = stdout.lastIndexOf(RESULT_SENTINEL);
-  if (index === -1) return null;
+/**
+ * Parse one NDJSON line from the helper.
+ *
+ * Anything that is not a recognisable event is ignored rather than treated as
+ * a failure: a stray line must not lose a run whose result is still coming.
+ */
+export function parseHelperLine(line: string): HelperEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
 
-  const tail = stdout.slice(index + RESULT_SENTINEL.length).trim();
-  if (!tail) return null;
-
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(tail);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    return parsed as HelperResponse;
+    parsed = JSON.parse(trimmed);
   } catch {
     return null;
   }
+
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  const { type } = parsed as { type?: unknown };
+  if (type === "frame" || type === "result") return parsed as HelperEvent;
+  return null;
+}
+
+function toLiveFrame(event: HelperFrameEvent): LiveFrame | null {
+  if (typeof event.png !== "string" || event.png.length === 0) return null;
+  return {
+    seq: typeof event.seq === "number" ? event.seq : 0,
+    atMs: typeof event.atMs === "number" ? event.atMs : 0,
+    png: event.png,
+  };
+}
+
+export interface RunOptions {
+  /** Called for each captured display frame, as it is drawn. */
+  onFrame?: (frame: LiveFrame) => void;
+  /** Abort the run, e.g. because the browser went away. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -63,12 +104,13 @@ export function parseHelperOutput(stdout: string): HelperResponse | null {
  *
  * The helper runs the program as a child process and reports back over a
  * single `docker exec`, so nothing the program prints can be mistaken for the
- * result payload.
+ * event stream. Frames arrive while the program is still running.
  */
 export async function runInContainer(
   container: string,
   request: RunRequest,
   config: RunnerConfig,
+  options: RunOptions = {},
 ): Promise<ContainerRunResult> {
   const timeoutMs = request.timeoutMs ?? config.runTimeoutMs;
   const needsDisplay = projectNeedsDisplay(request.files);
@@ -84,40 +126,60 @@ export async function runInContainer(
     capturePolicy: {
       firstCaptureAtMs: config.firstCaptureAtMs ?? DEFAULT_CAPTURE_POLICY.firstCaptureAtMs,
       captureIntervalMs: config.captureIntervalMs ?? DEFAULT_CAPTURE_POLICY.captureIntervalMs,
+      stableFramesRequired: config.stableFramesRequired,
     },
     screen: config.screen,
   });
 
-  const result = await dockerExec(container, ["snapjaw-exec"], {
+  // Collected in an array rather than a `let`: assignments made inside the
+  // stream callback are invisible to control-flow analysis, so a `let` would
+  // be narrowed to `null` for everything after the await.
+  const results: HelperResultEvent[] = [];
+
+  const transport = await runDockerStreaming(["exec", "-i", container, "snapjaw-exec"], {
     input: payload,
     timeoutMs: transportTimeoutMs(config),
+    signal: options.signal,
+    onStdoutLine: (line) => {
+      const event = parseHelperLine(line);
+      if (!event) return;
+
+      if (event.type === "frame") {
+        const frame = toLiveFrame(event);
+        if (frame && options.onFrame) options.onFrame(frame);
+        return;
+      }
+
+      results.push(event);
+    },
   });
 
-  if (result.timedOut) {
+  if (transport.timedOut) {
     throw new RunFailedError(
       `the sandbox did not answer within ${transportTimeoutMs(config)}ms and was abandoned`,
     );
   }
 
-  const parsed = parseHelperOutput(result.stdout);
-  if (!parsed) {
+  const resultEvent = results.at(-1);
+  if (!resultEvent) {
     throw new RunFailedError(
-      `unreadable sandbox response (exit ${result.code}): ${result.stderr.trim().slice(0, 300)}`,
+      `unreadable sandbox response (exit ${transport.code}): ${transport.stderr.trim().slice(0, 300)}`,
     );
   }
 
-  if (parsed.ok === false) {
-    throw new RunFailedError(parsed.error ?? "the sandbox rejected the run");
+  if (resultEvent.ok === false) {
+    throw new RunFailedError(resultEvent.error ?? "the sandbox rejected the run");
   }
 
   return {
-    stdout: parsed.stdout ?? "",
-    stderr: parsed.stderr ?? "",
-    exitCode: typeof parsed.exitCode === "number" ? parsed.exitCode : -1,
-    durationMs: typeof parsed.durationMs === "number" ? parsed.durationMs : 0,
-    timedOut: parsed.timedOut === true,
-    image: parsed.image ? `data:image/png;base64,${parsed.image}` : null,
-    hadDisplay: parsed.hadDisplay === true,
+    stdout: resultEvent.stdout ?? "",
+    stderr: resultEvent.stderr ?? "",
+    exitCode: typeof resultEvent.exitCode === "number" ? resultEvent.exitCode : -1,
+    durationMs: typeof resultEvent.durationMs === "number" ? resultEvent.durationMs : 0,
+    timedOut: resultEvent.timedOut === true,
+    image: resultEvent.image ? `data:image/png;base64,${resultEvent.image}` : null,
+    hadDisplay: resultEvent.hadDisplay === true,
+    frameCount: typeof resultEvent.frameCount === "number" ? resultEvent.frameCount : 0,
   };
 }
 

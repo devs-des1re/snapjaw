@@ -10,11 +10,14 @@
 export interface CapturePolicy {
   firstCaptureAtMs: number;
   captureIntervalMs: number;
+  /** Consecutive identical frames before a run is considered finished drawing. */
+  stableFramesRequired: number;
 }
 
 export const DEFAULT_CAPTURE_POLICY: CapturePolicy = {
-  firstCaptureAtMs: 400,
-  captureIntervalMs: 400,
+  firstCaptureAtMs: 150,
+  captureIntervalMs: 120,
+  stableFramesRequired: 3,
 };
 
 /**
