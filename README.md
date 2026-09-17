@@ -1,7 +1,7 @@
 # Snapjaw
 
-A Trinket-style online code editor for Python. Write code in your browser, run it in a real
-sandboxed container — turtle and tkinter output included — and share your files with a link.
+An online Python editor. Write code in the browser, run it in a real sandboxed container —
+turtle and tkinter windows included — and share it with a link.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
@@ -10,147 +10,99 @@ sandboxed container — turtle and tkinter output included — and share your fi
 ![Docker](https://img.shields.io/badge/Docker-sandboxed-2496ed?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-0099ff)
 
-## Status
+## What this is
 
-v1 — complete. Write Python in the browser, run it in a disposable sandbox with turtle and tkinter
-rendered live at up to 60fps, and share your files with a link.
+Trinket shut down, so this is a from-scratch replacement built the way I wanted it: Monaco editor,
+a live view of turtle/tkinter output rendered from an actual isolated container (not a browser
+polyfill), and a share button that saves your files and hands you a link. No accounts, no bloat.
 
-| Phase | Scope                             | State |
-| ----- | --------------------------------- | ----- |
-| 1     | Editor UI shell                   | Done  |
-| 2     | Database and file sharing         | Done  |
-| 3     | Sandbox runner and real execution | Done  |
-| 4     | Deployment and polish             | Done  |
+Untrusted code never runs inside the web app's process. It runs in a separate sandbox service that
+executes Python inside a locked-down, networkless, read-only container and streams the display back
+frame by frame.
 
-## Repository layout
+## Running it locally
 
-```
-snapjaw/
-├── apps/
-│   └── web/                       Next.js app — editor UI, API routes, sharing
-│       ├── app/api/               health, ping, run, run/stream, file
-│       ├── app/file/[id]/         shared file view
-│       ├── lib/db/                schema, connection, queries
-│       ├── lib/ratelimit.ts       Upstash limiter, /api/run/stream only
-│       ├── drizzle/               generated migrations
-│       └── Dockerfile             three targets: builder, migrator, runner
-├── services/
-│   └── sandbox-runner/            Warm container pool that runs untrusted Python
-│       ├── src/                   Express server, pool manager, docker wrapper
-│       ├── runner-image/          Python + Tk + Xvfb image and the in-container executor
-│       └── Dockerfile             the runner service's own image
-├── Caddyfile                      TLS and the public entrypoint
-└── docker-compose.yml             caddy + web
-```
-
-The sandbox runner is a separate service on purpose. Untrusted user code must never execute
-inside the Next.js process, where it would share an address space with the database credentials
-and application internals.
-
-## Getting started
-
-Requires Node.js 20.9 or newer, a Postgres database, and Docker.
+Needs Node 20.9+, Postgres, and Docker.
 
 ```bash
 npm install
-npm run image:build   # build the sandbox image (once, or after editing runner-image/)
-npm run db:migrate    # after setting DATABASE_URL
-npm run dev:all       # runner on :4000 and the web app on :3000
+npm run image:build
+npm run db:migrate
+npm run dev:all
 ```
 
-`npm run dev` starts the web app alone, which is enough for editing and sharing but leaves **Run**
-reporting that the sandbox is unavailable — execution lives in the separate runner service. Use
-`npm run dev:all` for both, or `npm run dev` and `npm run dev:runner` in two terminals.
+`npm run dev` alone starts just the web app — fine for editing and sharing, but Run will report the
+sandbox as unavailable since execution lives in the separate runner. Use `dev:all`, or run `dev` and
+`dev:runner` in separate terminals.
 
-Environment variables live in `.env.example` files (committed) alongside git-ignored `.env.local`
-files. Neither contains comments — the key names are the documentation.
+Env vars live in committed `.env.example` files next to git-ignored `.env.local` files. Neither has
+comments — the variable names are self-explanatory enough on their own.
 
-| Variable                         | Where  | Purpose                                                                                               |
-| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                   | web    | Postgres connection string. Required.                                                                 |
-| `APP_URL`                        | web    | Public origin used to build share links. Falls back to the request's forwarded host, then its origin. |
-| `SANDBOX_RUNNER_URL`             | web    | Base URL of the runner service. Required for Run.                                                     |
-| `SANDBOX_RUNNER_TOKEN`           | both   | Optional shared secret. When set on both sides, `/run` requires it.                                   |
-| `UPSTASH_REDIS_REST_*`           | web    | Enables rate limiting on `/api/run`. Without them the limiter is disabled and logs a warning.         |
-| `RUN_RATE_LIMIT`                 | web    | Runs allowed per window. Default `10`.                                                                |
-| `RUN_RATE_WINDOW`                | web    | Rate limit window. Default `1 m`.                                                                     |
-| `SANDBOX_POOL_SIZE`              | runner | Warm containers to keep. Default `3`.                                                                 |
-| `SANDBOX_TIMEOUT_MS`             | runner | Wall clock per program. Default `10000`.                                                              |
-| `SANDBOX_MEMORY`                 | runner | Per-container memory cap. Default `256m`.                                                             |
-| `SANDBOX_CPUS`                   | runner | Per-container CPU cap. Default `1`.                                                                   |
-| `SANDBOX_STREAM_FPS`             | runner | Target live frame rate. Default `60`.                                                                 |
-| `SANDBOX_STREAM_QUALITY`         | runner | JPEG quality for streamed frames. Default `60`.                                                       |
-| `SANDBOX_STREAM_WIDTH`           | runner | Downscale width for streamed frames. Default `800`.                                                   |
-| `SANDBOX_STABLE_MS`              | runner | How long the display must stop changing to end a run. Default `600`.                                  |
-| `SANDBOX_FORCE_FALLBACK_CAPTURE` | runner | Force the slower ImageMagick capture path. Diagnostics.                                               |
+| Variable                 | Where  | What it does                                                   |
+| ------------------------ | ------ | -------------------------------------------------------------- |
+| `DATABASE_URL`           | web    | Postgres connection string.                                    |
+| `APP_URL`                | web    | Public origin for building share links.                        |
+| `SANDBOX_RUNNER_URL`     | web    | Base URL of the runner service.                                |
+| `SANDBOX_RUNNER_TOKEN`   | both   | Optional shared secret between web and runner.                 |
+| `UPSTASH_REDIS_REST_*`   | web    | Enables rate limiting on `/api/run`. Omit to disable it.       |
+| `RUN_RATE_LIMIT`         | web    | Runs allowed per window (default `10`).                        |
+| `RUN_RATE_WINDOW`        | web    | Rate limit window (default `1 m`).                             |
+| `SANDBOX_POOL_SIZE`      | runner | Warm containers kept ready (default `3`).                      |
+| `SANDBOX_TIMEOUT_MS`     | runner | Max time per run (default `10000`).                            |
+| `SANDBOX_MEMORY`         | runner | Memory cap per container (default `256m`).                     |
+| `SANDBOX_CPUS`           | runner | CPU cap per container (default `1`).                           |
+| `SANDBOX_STREAM_FPS`     | runner | Target frame rate for live output (default `60`).              |
+| `SANDBOX_STREAM_QUALITY` | runner | JPEG quality for streamed frames (default `60`).               |
+| `SANDBOX_STREAM_WIDTH`   | runner | Downscale width for streamed frames (default `800`).           |
+| `SANDBOX_STABLE_MS`      | runner | Idle time before a run is considered finished (default `600`). |
 
-`APP_URL` is deliberately **not** prefixed `NEXT_PUBLIC_`. That prefix gets inlined at build time,
-which would bake one environment's URL into every deployment.
+`APP_URL` is deliberately not `NEXT_PUBLIC_`-prefixed — that gets baked into the build at compile
+time, which would hardcode one environment's URL into every deploy.
 
 ## Scripts
 
-Run from the repository root. `dev`, `build`, `start`, `lint`, `typecheck`, `test` and the `db:*`
-commands delegate to the workspace packages.
+| Script                | Does                                     |
+| --------------------- | ---------------------------------------- |
+| `npm run dev`         | Web app only                             |
+| `npm run dev:all`     | Web app + sandbox runner                 |
+| `npm run image:build` | Build the sandbox image                  |
+| `npm run build`       | Production build                         |
+| `npm run db:migrate`  | Apply migrations                         |
+| `npm run db:push`     | Push schema directly (no migration file) |
+| `npm run lint`        | ESLint                                   |
+| `npm test`            | Vitest, both workspaces                  |
 
-| Script                 | Purpose                                      |
-| ---------------------- | -------------------------------------------- |
-| `npm run dev`          | Start the web app in development             |
-| `npm run dev:all`      | Start the web app **and** the sandbox runner |
-| `npm run dev:runner`   | Start only the sandbox runner                |
-| `npm run image:build`  | Build the sandbox image                      |
-| `npm run build`        | Production build                             |
-| `npm start`            | Serve the production build                   |
-| `npm run db:generate`  | Generate a migration from the schema         |
-| `npm run db:migrate`   | Apply pending migrations                     |
-| `npm run db:push`      | Push the schema straight to the database     |
-| `npm run lint`         | ESLint                                       |
-| `npm run typecheck`    | `tsc --noEmit`                               |
-| `npm test`             | Vitest, both workspaces                      |
-| `npm run format`       | Prettier, writes changes                     |
-| `npm run format:check` | Prettier, check only                         |
+## Deploying
 
-## Deployment
-
-Docker Compose runs two services: Caddy as the public entrypoint, and the Next.js app behind it.
-Caddy obtains and renews Let's Encrypt certificates on its own.
+`docker-compose.yml` currently runs two services: Caddy in front for automatic HTTPS, and the web
+app behind it. Postgres and the sandbox runner aren't wired into compose yet — until they're added
+back, sharing and Run will fail cleanly with a "service unavailable" error rather than crashing.
 
 ```bash
-cp apps/web/.env.example apps/web/.env   # compose reads this file
+cp apps/web/.env.example apps/web/.env
 docker compose up -d --build
 ```
 
-Caddy publishes 80 and 443 and terminates TLS for the domain in `Caddyfile`, which currently
-points at `snapjaw.dev` — change that one line to your own domain. The web container publishes no
-ports; Caddy reaches it internally as `web:3000`.
+Change the domain in `Caddyfile` to your own — it points at a placeholder right now. The web
+container publishes no ports itself; Caddy is the only thing facing the internet and reaches it
+internally as `web:3000`.
 
-Postgres and the sandbox runner are deliberately not in this file yet. Until they are added back,
-sharing and **Run** will fail with a clear service-unavailable error.
+A few things worth knowing before running this for real:
 
-### Notes for operating it
-
-- **Rate limiting needs Upstash credentials.** Without `UPSTASH_REDIS_REST_*` the limiter is
-  disabled and logs a warning rather than failing closed.
-- **`Caddyfile` sets `flush_interval -1`** on the proxy so `/api/run/stream` is not buffered.
-  Removing it would add latency to the live sandbox stream.
-- **One runner per Docker host.** The runner drives the host daemon and prunes containers
-  matching its name prefix at startup, so a second instance would fight the first.
-- **Redeploys can briefly leave idle sandbox containers.** A hard-killed runner cannot remove its
-  pool. The incoming runner sweeps those at startup and again over its next couple of health
-  ticks, so the count self-corrects; a graceful stop removes them immediately. The residue is
-  inert — containers idling on `sleep infinity`, costing no CPU.
-- **Back up the `postgres-data` volume** once Postgres is added back. Shares live there and
-  nowhere else.
-
-### Runtime image sizes
-
-The web image is around 440 MB (a Next.js standalone bundle on `node:22-slim`). The sandbox image
-is around 630 MB, most of which is the Tk, Xvfb and ImageMagick apt layer — Pillow, which does the
-fast display capture, is under 20 MB of it. It is pulled once and reused by every run.
+- No `UPSTASH_REDIS_REST_*` means no rate limiting on `/api/run` — it's silently disabled, not a
+  failure.
+- `Caddyfile` sets `flush_interval -1` on the proxy so the live run stream isn't buffered. Don't
+  remove it.
+- One runner per Docker host — it prunes containers by its own name prefix on startup, so two
+  runners would fight over the same pool.
+- A hard-killed runner can leave idle sandbox containers behind. They cost nothing (`sleep
+infinity`) and get swept on the next runner startup.
+- Back up the `postgres-data` volume once Postgres is back in the compose file — shares live there
+  and nowhere else.
 
 ## API
 
-Every response carries `timestamp` and `version`. Success payloads are spread at the top level;
-failures always use the same shape:
+Every response includes `timestamp` and `version`. Errors always look like:
 
 ```json
 {
@@ -160,144 +112,58 @@ failures always use the same shape:
 }
 ```
 
-| Method | Route             | Notes                                                             |
-| ------ | ----------------- | ----------------------------------------------------------------- |
-| `GET`  | `/api/health`     | `{ "status": "ok" }`. Liveness only — never touches the database. |
-| `GET`  | `/api/ping`       | `{ "pong": true, "latencyMs": n }` — server handling time.        |
-| `POST` | `/api/run`        | Execute a project, wait, return the result as JSON.               |
-| `POST` | `/api/run/stream` | Execute a project and relay display frames live.                  |
-| `POST` | `/api/file`       | Store a project, return `{ id, url, path }`. `201`.               |
-| `GET`  | `/api/file/[id]`  | Fetch a shared project. `404` if absent or soft-deleted.          |
+| Method | Route             | What it does                                      |
+| ------ | ----------------- | ------------------------------------------------- |
+| GET    | `/api/health`     | Liveness check, no database touch.                |
+| GET    | `/api/ping`       | Round-trip latency.                               |
+| POST   | `/api/run`        | Run a project, wait, return the result.           |
+| POST   | `/api/run/stream` | Run a project, stream display frames live.        |
+| POST   | `/api/file`       | Save a project, get back `{ id, url, path }`.     |
+| GET    | `/api/file/[id]`  | Load a shared project. 404 if missing or deleted. |
 
-`/api/run/stream` responds with newline-delimited JSON:
-`{"type":"frame","seq":n,"atMs":n,"format":"jpeg","data":"<base64>"}` while a turtle or tkinter
-window is being drawn, then exactly one `{"type":"result",...}` or `{"type":"error",...}`. Console
-programs simply produce no frames. The editor uses this endpoint; `/api/run` stays as the simple
-blocking call for scripts.
+`/api/run/stream` streams newline-delimited JSON — a `frame` message per captured frame, then one
+final `result` or `error` message. The editor uses this endpoint; `/api/run` is the plain blocking
+version for scripted use.
 
-Validation is Zod on every request body. Status codes: `400` malformed or invalid, `404` missing,
-`413` oversized, `429` rate limited, `502` the sandbox failed, `503` the sandbox is unavailable,
-`500` unexpected.
+## How the sandbox works
 
-## The sandbox
+Editor → `/api/run/stream` → runner service → `docker exec` into a pre-warmed container. The
+Next.js process never touches user code directly.
 
-A run goes: editor → `/api/run/stream` → the runner service → `docker exec` into a warm container.
-The Next.js process never executes user code.
+**Pool.** The runner keeps a fixed number of containers idling on `sleep infinity`. A run claims
+one, executes, and the container is wiped and returned to the pool. If all are busy, the request
+queues briefly before failing with 503. Idle members are health-checked and replaced if they stop
+responding.
 
-### Warm container pool
+**Isolation**, per container: no network, read-only root filesystem (only `/tmp` is writable),
+memory/CPU/process-count caps, all Linux capabilities dropped, no privilege escalation, and an
+unprivileged user inside. Between runs, `/tmp` is fully wiped — a previous project's files can't
+leak into the next run.
 
-The runner keeps `SANDBOX_POOL_SIZE` containers running `runner-image`, each idling on
-`sleep infinity`. A run acquires one, executes through a single `docker exec`, and then the
-container is reset and returned to the pool. If every container is busy the request queues for
-`SANDBOX_ACQUIRE_TIMEOUT_MS` before giving up with `503`.
+**Turtle and tkinter.** These need a real X display, so the executor starts a private Xvfb per run
+when a project imports either. Frames are captured with Pillow (not shelling out to ImageMagick,
+which is roughly 20x slower per frame) and streamed to the browser live at up to 60fps as they're
+drawn, then saved as a full-resolution PNG once the program settles. A run ends once the display
+stops changing for a short window — measured in time, not frame count, so it behaves consistently
+regardless of how fast frames are coming in.
 
-Members are health-checked on a timer and replaced when they stop responding. A member held far
-longer than any run could legitimately take is reclaimed too — otherwise a wedged reset would
-shrink the pool permanently, since busy members are skipped by the normal health check.
+Programs need to keep their window open to be captured — call `turtle.done()` or `root.mainloop()`,
+same as running it locally. Without that the interpreter exits and there's nothing left to
+photograph.
 
-### Isolation
-
-Each container is started with:
-
-| Flag                               | Effect                                                         |
-| ---------------------------------- | -------------------------------------------------------------- |
-| `--network none`                   | No network access at all.                                      |
-| `--read-only`                      | Root filesystem is immutable; only a `/tmp` tmpfs is writable. |
-| `--tmpfs /tmp:rw,size=…,mode=1777` | The single scratch area.                                       |
-| `--memory` / `--memory-swap`       | Hard memory cap.                                               |
-| `--cpus`                           | CPU cap.                                                       |
-| `--pids-limit`                     | Fork bomb ceiling.                                             |
-| `--cap-drop ALL`                   | No Linux capabilities.                                         |
-| `--security-opt no-new-privileges` | Cannot gain privileges.                                        |
-
-Inside, the image runs as an unprivileged `sandbox` user (uid 1000), and the executor refuses file
-names containing path separators, so a project cannot write outside its scratch directory.
-
-Between runs the container is swept: stray executors and X servers are killed, and every entry
-under `/tmp` is deleted. Because the container is read-only, that is a complete wipe — a previous
-project's files cannot be observed by the next one.
-
-### Display capture
-
-`turtle` and `tkinter` need an X display, so for projects that import them the executor starts a
-private Xvfb and runs the program with `DISPLAY` pointed at it.
-
-**Frames stream live, at around 55fps.** The executor writes each capture to stdout as it happens and
-flushes, the runner relays it over the same connection, and the web layer pipes it straight through
-to the browser — so a turtle drawing is watched as it draws, not just photographed at the end.
-
-Getting there needed three things to line up:
-
-1. **Capture in-process.** Shelling out to ImageMagick costs ~130ms per frame, which caps the whole
-   thing at ~8fps however fast everything else is. Grabbing the display with Pillow and encoding
-   JPEG in the same process is ~7ms, so the ceiling is well above 60fps. ImageMagick remains as a
-   fallback if Pillow is unavailable; `SANDBOX_FORCE_FALLBACK_CAPTURE=1` exercises that path.
-2. **Downscale and compress the stream.** Frames go out as 800px-wide JPEG rather than full-size PNG,
-   which lands around 15 KiB per frame — roughly 0.6 MiB/s at 60fps. The finished run is still saved
-   as a full-resolution PNG.
-3. **Keep frames out of React state.** Routing 60 setState calls a second through React made it
-   coalesce them and drop about two thirds of the animation. The stream now writes into a ref and the
-   panel paints it on animation frames, so React never renders in the hot path.
-
-A frame is only accepted once a window has actually been mapped, so a console program cannot come
-back with a screenshot of an empty display.
-
-The run ends when the drawing stops: once the display has been unchanged for `SANDBOX_STABLE_MS` the
-program is sitting in its main loop and there is no reason to burn the whole timeout on it. That is
-measured in **time, not frames** — "three identical frames" is a different duration at 8fps than at
-60fps, and at 60fps it is short enough to mistake a `time.sleep(0.05)` between turtle steps for the
-end of the run.
-
-**Programs must keep their window open to be captured.** Call `turtle.done()` or `root.mainloop()`.
-Without it the interpreter exits, Tk destroys the window, and there is nothing left to photograph —
-the same thing that happens on a desktop. The streamed frames up to that point are still delivered.
-
-### Docker access: socket mount, not DinD
-
-The runner is given the host's Docker socket:
-
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
-```
-
-That service is not in `docker-compose.yml` yet — it is added back on request. When it is, the
-socket mount above is the line it needs.
-
-**Why not Docker-in-Docker?** DinD runs a second daemon inside the runner container, which needs
-`--privileged`, its own storage driver and image cache, and a nested network setup. The socket mount
-needs one line and reuses the host's image cache, so the sandbox image is built once. The tradeoff is
-that socket access is effectively root on the host, which is acceptable for a single-tenant
-self-hosted deployment: the runner is never publicly reachable, and the untrusted code itself runs
-in _sibling_ containers that are unprivileged, networkless and read-only.
-
-The runner shells out to the `docker` CLI rather than using a client library. The CLI already knows
-how to reach the socket on every platform, and the runner does no container work beyond `run` and
-`exec`.
+**Docker access.** The runner is given the host's Docker socket rather than running its own nested
+Docker daemon (Docker-in-Docker). Socket access is effectively root on the host, which is fine here
+because the runner itself is never exposed publicly — only the unprivileged, networkless containers
+it spawns ever touch untrusted code.
 
 ## Database
 
-Postgres via Drizzle. One table, `shared_files`, holding `files` as `jsonb`, the `entry_file`, and
-the `font_size` to restore on open. UUID primary keys, `created_at`/`updated_at` on every row, and a
-`deleted_at` soft-delete column that all reads filter on.
+One table, `shared_files` — `files` (jsonb), `entry_file`, `font_size`, UUID primary key,
+`created_at`/`updated_at`, and a `deleted_at` soft-delete column. Shares are immutable snapshots:
+there's no update endpoint, so re-sharing an edited project creates a new link.
 
-Shares are **immutable snapshots** — v1 has no update endpoint, so editing a shared project and
-sharing again creates a new link rather than mutating the old one.
-
-`jsonb` does not preserve key order, so tab order is rebuilt deterministically when a share is
-opened: the entry file first, then the rest alphabetically.
-
-Both services log structured JSON to `logs/<timestamp>.log` and mirror it to stdout.
-
-## Design notes
-
-- Dark theme only, always on. There is no light mode.
-- The accent colour is `#0099ff`, used sparingly: the Run button, the active tab border, and focus
-  rings. Never as a glow or a box-shadow.
-- Design tokens (colour, spacing, radius, type) are declared once in `apps/web/app/globals.css`
-  via Tailwind's `@theme`, not split across files.
-- This is **file sharing**, not "snippets" — the database table, routes, and UI copy all say
-  "files".
+`jsonb` doesn't preserve key order, so tab order is rebuilt on load: entry file first, then the rest
+alphabetically.
 
 ## License
 
