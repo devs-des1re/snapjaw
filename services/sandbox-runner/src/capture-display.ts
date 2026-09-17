@@ -9,15 +9,26 @@
 
 export interface CapturePolicy {
   firstCaptureAtMs: number;
-  captureIntervalMs: number;
-  /** Consecutive identical frames before a run is considered finished drawing. */
-  stableFramesRequired: number;
+  /**
+   * How long the display must stay unchanged before a run is considered
+   * finished drawing. Measured in time rather than frames so the value means
+   * the same thing at 8fps and at 60fps.
+   */
+  stableMs: number;
+  /** Target frames per second for the live stream. */
+  streamFps: number;
+  /** JPEG quality for streamed frames. */
+  streamQuality: number;
+  /** Downscale width for streamed frames; 0 captures at full display size. */
+  streamWidth: number;
 }
 
 export const DEFAULT_CAPTURE_POLICY: CapturePolicy = {
   firstCaptureAtMs: 150,
-  captureIntervalMs: 120,
-  stableFramesRequired: 3,
+  stableMs: 600,
+  streamFps: 60,
+  streamQuality: 60,
+  streamWidth: 800,
 };
 
 /**

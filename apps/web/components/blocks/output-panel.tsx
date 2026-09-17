@@ -1,8 +1,10 @@
 "use client";
 
+import { type RefObject } from "react";
 import { Icon } from "@iconify/react";
 import terminalIcon from "@iconify-icons/lucide/terminal";
 
+import { LiveDisplay } from "@/components/blocks/live-display";
 import type { LiveFrame, RunResult } from "@/lib/run";
 
 export interface OutputPanelProps {
@@ -11,8 +13,8 @@ export interface OutputPanelProps {
   entryFile: string;
   /** A failure to reach or use the sandbox, as opposed to the program failing. */
   error?: string | null;
-  /** The most recent display frame, while the program is still drawing. */
-  liveFrame?: LiveFrame | null;
+  /** Newest streamed frame. A ref so 60fps frames bypass React state. */
+  liveFrameRef?: RefObject<LiveFrame | null>;
   /** How many frames have arrived for the run in progress. */
   frameCount?: number;
 }
@@ -62,7 +64,7 @@ export function OutputPanel({
   isRunning,
   entryFile,
   error,
-  liveFrame,
+  liveFrameRef,
   frameCount = 0,
 }: OutputPanelProps) {
   return (
@@ -84,23 +86,35 @@ export function OutputPanel({
           isRunning={isRunning}
           entryFile={entryFile}
           error={error}
-          liveFrame={liveFrame}
+          liveFrameRef={liveFrameRef}
+          frameCount={frameCount}
         />
       </div>
     </section>
   );
 }
 
-function OutputBody({ result, isRunning, entryFile, error, liveFrame }: OutputPanelProps) {
+function OutputBody({
+  result,
+  isRunning,
+  entryFile,
+  error,
+  liveFrameRef,
+  frameCount = 0,
+}: OutputPanelProps) {
   if (isRunning) {
-    if (liveFrame) {
+    if (liveFrameRef && frameCount > 0) {
       return (
         <div className="flex h-full min-h-0 flex-col p-3">
-          <CapturedImage
-            src={liveFrame.src}
-            alt="Live view of the program's virtual display"
-            caption={`Live · frame ${liveFrame.seq} · ${liveFrame.atMs} ms`}
-          />
+          <figure className="flex min-h-0 flex-1 flex-col gap-1.5">
+            <LiveDisplay
+              frameRef={liveFrameRef}
+              className="min-h-0 w-auto max-w-full flex-1 self-start rounded-md border border-line object-contain"
+            />
+            <figcaption className="shrink-0 text-2xs text-fg-subtle">
+              Live · {frameCount} frames
+            </figcaption>
+          </figure>
         </div>
       );
     }

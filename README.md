@@ -63,21 +63,24 @@ reporting that the sandbox is unavailable — execution lives in the separate ru
 Environment variables live in `.env.example` files (committed) alongside git-ignored `.env.local`
 files. Neither contains comments — the key names are the documentation.
 
-| Variable                      | Where  | Purpose                                                                                               |
-| ----------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                | web    | Postgres connection string. Required.                                                                 |
-| `APP_URL`                     | web    | Public origin used to build share links. Falls back to the request's forwarded host, then its origin. |
-| `SANDBOX_RUNNER_URL`          | web    | Base URL of the runner service. Required for Run.                                                     |
-| `SANDBOX_RUNNER_TOKEN`        | both   | Optional shared secret. When set on both sides, `/run` requires it.                                   |
-| `UPSTASH_REDIS_REST_*`        | web    | Enables rate limiting on `/api/run`. Without them the limiter is disabled and logs a warning.         |
-| `RUN_RATE_LIMIT`              | web    | Runs allowed per window. Default `10`.                                                                |
-| `RUN_RATE_WINDOW`             | web    | Rate limit window. Default `1 m`.                                                                     |
-| `SANDBOX_POOL_SIZE`           | runner | Warm containers to keep. Default `3`.                                                                 |
-| `SANDBOX_TIMEOUT_MS`          | runner | Wall clock per program. Default `10000`.                                                              |
-| `SANDBOX_MEMORY`              | runner | Per-container memory cap. Default `256m`.                                                             |
-| `SANDBOX_CPUS`                | runner | Per-container CPU cap. Default `1`.                                                                   |
-| `SANDBOX_CAPTURE_INTERVAL_MS` | runner | Live frame interval. Default `120`.                                                                   |
-| `SANDBOX_STABLE_FRAMES`       | runner | Identical frames before a run counts as finished drawing. Default `3`.                                |
+| Variable                         | Where  | Purpose                                                                                               |
+| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                   | web    | Postgres connection string. Required.                                                                 |
+| `APP_URL`                        | web    | Public origin used to build share links. Falls back to the request's forwarded host, then its origin. |
+| `SANDBOX_RUNNER_URL`             | web    | Base URL of the runner service. Required for Run.                                                     |
+| `SANDBOX_RUNNER_TOKEN`           | both   | Optional shared secret. When set on both sides, `/run` requires it.                                   |
+| `UPSTASH_REDIS_REST_*`           | web    | Enables rate limiting on `/api/run`. Without them the limiter is disabled and logs a warning.         |
+| `RUN_RATE_LIMIT`                 | web    | Runs allowed per window. Default `10`.                                                                |
+| `RUN_RATE_WINDOW`                | web    | Rate limit window. Default `1 m`.                                                                     |
+| `SANDBOX_POOL_SIZE`              | runner | Warm containers to keep. Default `3`.                                                                 |
+| `SANDBOX_TIMEOUT_MS`             | runner | Wall clock per program. Default `10000`.                                                              |
+| `SANDBOX_MEMORY`                 | runner | Per-container memory cap. Default `256m`.                                                             |
+| `SANDBOX_CPUS`                   | runner | Per-container CPU cap. Default `1`.                                                                   |
+| `SANDBOX_STREAM_FPS`             | runner | Target live frame rate. Default `60`.                                                                 |
+| `SANDBOX_STREAM_QUALITY`         | runner | JPEG quality for streamed frames. Default `60`.                                                       |
+| `SANDBOX_STREAM_WIDTH`           | runner | Downscale width for streamed frames. Default `800`.                                                   |
+| `SANDBOX_STABLE_MS`              | runner | How long the display must stop changing to end a run. Default `600`.                                  |
+| `SANDBOX_FORCE_FALLBACK_CAPTURE` | runner | Force the slower ImageMagick capture path. Diagnostics.                                               |
 
 `APP_URL` is deliberately **not** prefixed `NEXT_PUBLIC_`. That prefix gets inlined at build time,
 which would bake one environment's URL into every deployment.
@@ -174,21 +177,33 @@ project's files cannot be observed by the next one.
 ### Display capture
 
 `turtle` and `tkinter` need an X display, so for projects that import them the executor starts a
-private Xvfb, runs the program with `DISPLAY` pointed at it, and screenshots the root window with
-ImageMagick.
+private Xvfb and runs the program with `DISPLAY` pointed at it.
 
-**Frames stream live.** The executor writes each capture to stdout as it happens and flushes, the
-runner relays it over the same connection, and the web layer pipes it straight through to the
-browser — so a turtle drawing is watched as it draws, not just photographed at the end. Around
-8 frames per second at the default 120 ms interval; capturing is the floor, so lowering the interval
-further will not buy much. The last frame is also returned as the run's still image.
+**Frames stream live, at around 55fps.** The executor writes each capture to stdout as it happens and
+flushes, the runner relays it over the same connection, and the web layer pipes it straight through
+to the browser — so a turtle drawing is watched as it draws, not just photographed at the end.
+
+Getting there needed three things to line up:
+
+1. **Capture in-process.** Shelling out to ImageMagick costs ~130ms per frame, which caps the whole
+   thing at ~8fps however fast everything else is. Grabbing the display with Pillow and encoding
+   JPEG in the same process is ~7ms, so the ceiling is well above 60fps. ImageMagick remains as a
+   fallback if Pillow is unavailable; `SANDBOX_FORCE_FALLBACK_CAPTURE=1` exercises that path.
+2. **Downscale and compress the stream.** Frames go out as 800px-wide JPEG rather than full-size PNG,
+   which lands around 15 KiB per frame — roughly 0.6 MiB/s at 60fps. The finished run is still saved
+   as a full-resolution PNG.
+3. **Keep frames out of React state.** Routing 60 setState calls a second through React made it
+   coalesce them and drop about two thirds of the animation. The stream now writes into a ref and the
+   panel paints it on animation frames, so React never renders in the hot path.
 
 A frame is only accepted once a window has actually been mapped, so a console program cannot come
 back with a screenshot of an empty display.
 
-The run ends when the drawing stops: three consecutive identical frames mean the program is sitting
-in its main loop, and there is no reason to burn the whole timeout on it. Requiring several stable
-frames keeps a pause in a slow animation from cutting it short.
+The run ends when the drawing stops: once the display has been unchanged for `SANDBOX_STABLE_MS` the
+program is sitting in its main loop and there is no reason to burn the whole timeout on it. That is
+measured in **time, not frames** — "three identical frames" is a different duration at 8fps than at
+60fps, and at 60fps it is short enough to mistake a `time.sleep(0.05)` between turtle steps for the
+end of the run.
 
 **Programs must keep their window open to be captured.** Call `turtle.done()` or `root.mainloop()`.
 Without it the interpreter exits, Tk destroys the window, and there is nothing left to photograph —

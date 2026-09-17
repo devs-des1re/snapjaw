@@ -18,7 +18,7 @@ export type RunOutcome = { ok: true; result: RunResult } | { ok: false; message:
 export interface LiveFrame {
   seq: number;
   atMs: number;
-  /** PNG data URL, ready to hand to an <img>. */
+  /** Data URL, ready to hand to an image or canvas. */
   src: string;
 }
 
@@ -115,12 +115,18 @@ export async function runProjectStreaming(
     const { type } = event as { type?: unknown };
 
     if (type === "frame") {
-      const { png, seq, atMs } = event as { png?: unknown; seq?: unknown; atMs?: unknown };
-      if (typeof png === "string" && png.length > 0) {
+      const { data, format, seq, atMs } = event as {
+        data?: unknown;
+        format?: unknown;
+        seq?: unknown;
+        atMs?: unknown;
+      };
+      if (typeof data === "string" && data.length > 0) {
+        const mime = typeof format === "string" && format === "png" ? "png" : "jpeg";
         handlers.onFrame?.({
           seq: typeof seq === "number" ? seq : 0,
           atMs: typeof atMs === "number" ? atMs : 0,
-          src: `data:image/png;base64,${png}`,
+          src: `data:image/${mime};base64,${data}`,
         });
       }
       return;

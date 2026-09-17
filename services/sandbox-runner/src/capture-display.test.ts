@@ -50,15 +50,24 @@ describe("projectNeedsDisplay", () => {
 });
 
 describe("DEFAULT_CAPTURE_POLICY", () => {
-  it("samples often enough to look like live animation", () => {
-    expect(DEFAULT_CAPTURE_POLICY.captureIntervalMs).toBeLessThanOrEqual(200);
+  it("targets a smooth frame rate", () => {
+    expect(DEFAULT_CAPTURE_POLICY.streamFps).toBeGreaterThanOrEqual(60);
   });
 
   it("starts capturing soon after the program begins", () => {
     expect(DEFAULT_CAPTURE_POLICY.firstCaptureAtMs).toBeLessThanOrEqual(300);
   });
 
-  it("requires several stable frames so a pause mid-animation does not end a run", () => {
-    expect(DEFAULT_CAPTURE_POLICY.stableFramesRequired).toBeGreaterThanOrEqual(3);
+  it("waits long enough to tell a pause from the end of a run", () => {
+    expect(DEFAULT_CAPTURE_POLICY.stableMs).toBeGreaterThanOrEqual(400);
+  });
+
+  it("downscales the stream to keep bandwidth sane", () => {
+    expect(DEFAULT_CAPTURE_POLICY.streamWidth).toBeGreaterThan(0);
+    expect(DEFAULT_CAPTURE_POLICY.streamWidth).toBeLessThanOrEqual(1024);
+  });
+
+  it("uses a lossy quality for the stream and leaves the still lossless", () => {
+    expect(DEFAULT_CAPTURE_POLICY.streamQuality).toBeLessThan(90);
   });
 });

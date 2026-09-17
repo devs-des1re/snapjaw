@@ -144,7 +144,13 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
       const result = await runInContainer(member.name, parsed.data, config, {
         signal: controller.signal,
         onFrame: (frame) => {
-          write({ type: "frame", seq: frame.seq, atMs: frame.atMs, png: frame.png });
+          write({
+            type: "frame",
+            seq: frame.seq,
+            atMs: frame.atMs,
+            format: frame.format,
+            data: frame.data,
+          });
         },
       });
 

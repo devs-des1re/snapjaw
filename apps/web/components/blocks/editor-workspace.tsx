@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import {
@@ -65,9 +65,15 @@ export function EditorWorkspace({
   const [fontSize, setFontSize] = useState<number>(initialFontSize);
   const [result, setResult] = useState<RunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [liveFrame, setLiveFrame] = useState<LiveFrame | null>(null);
   const [frameCount, setFrameCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Frames bypass React state: at 60fps, routing each one through setState made
+  // React coalesce them and drop most of the animation. The stream writes into
+  // this ref and LiveDisplay paints it on animation frames instead.
+  const liveFrameRef = useRef<LiveFrame | null>(null);
+  const frameCountRef = useRef(0);
+  const lastFrameStatusAt = useRef(0);
   const [isSharing, setIsSharing] = useState(false);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [share, setShare] = useState<ShareState>({ status: "idle" });
@@ -76,7 +82,7 @@ export function EditorWorkspace({
 
   // A captured turtle/tkinter window needs the room to be legible, so the
   // output panel grows when there is one to show — live or final.
-  const hasImage = result?.image != null || liveFrame != null;
+  const hasImage = result?.image != null || frameCount > 0;
 
   const handleSelect = useCallback((name: string) => {
     setActiveFile(name);
@@ -159,16 +165,24 @@ export function EditorWorkspace({
     setIsRunning(true);
     setRunError(null);
     setResult(null);
-    setLiveFrame(null);
     setFrameCount(0);
+    liveFrameRef.current = null;
+    frameCountRef.current = 0;
+    lastFrameStatusAt.current = 0;
 
     try {
       const outcome = await runProjectStreaming(files, active.name, {
-        // Frames land here while the program is still drawing, so a turtle or
-        // tkinter window can be watched rather than only photographed.
         onFrame: (frame) => {
-          setLiveFrame(frame);
-          setFrameCount((count) => count + 1);
+          // Drawing happens from the ref; only the status line needs state, and
+          // it is throttled so 60fps frames do not cause 60 React renders.
+          liveFrameRef.current = frame;
+          frameCountRef.current += 1;
+
+          const now = Date.now();
+          if (frameCountRef.current === 1 || now - lastFrameStatusAt.current >= 200) {
+            lastFrameStatusAt.current = now;
+            setFrameCount(frameCountRef.current);
+          }
         },
       });
 
@@ -178,8 +192,9 @@ export function EditorWorkspace({
         setRunError(outcome.message);
       }
     } finally {
-      // The final image takes over from the live one, in the same render.
-      setLiveFrame(null);
+      // The final image takes over from the live view, in the same render.
+      liveFrameRef.current = null;
+      setFrameCount(frameCountRef.current);
       setIsRunning(false);
     }
   }, [files, active.name, isRunning]);
@@ -285,7 +300,7 @@ export function EditorWorkspace({
             isRunning={isRunning}
             entryFile={active.name}
             error={runError}
-            liveFrame={liveFrame}
+            liveFrameRef={liveFrameRef}
             frameCount={frameCount}
           />
         </div>

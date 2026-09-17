@@ -21,6 +21,7 @@ process's stdout.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -36,6 +37,9 @@ DISPLAY_NUMBER = 99
 XVFB_READY_TIMEOUT_S = 10.0
 OUTPUT_TRUNCATION_NOTE = "\n[snapjaw] output truncated\n"
 
+# Cached (Image, ImageGrab) modules, False once we know Pillow is unusable.
+_pillow = None
+
 
 def emit_event(payload: dict) -> None:
     """Write one NDJSON event and flush, so it leaves the container promptly."""
@@ -43,13 +47,15 @@ def emit_event(payload: dict) -> None:
     sys.stdout.flush()
 
 
-def emit_frame(seq: int, at_ms: int, png_bytes: bytes) -> None:
+def emit_frame(seq: int, at_ms: int, payload: bytes, fmt: str = "jpeg") -> None:
+    """Send one frame. `fmt` is `jpeg` on the fast path, `png` on the fallback."""
     emit_event(
         {
             "type": "frame",
             "seq": seq,
             "atMs": at_ms,
-            "png": base64.b64encode(png_bytes).decode("ascii"),
+            "format": fmt,
+            "data": base64.b64encode(payload).decode("ascii"),
         }
     )
 
@@ -134,8 +140,63 @@ def start_display(screen: str) -> subprocess.Popen | None:
     return None
 
 
+def grab_display(width: int, quality: int):
+    """Grab the display in-process.
+
+    Returns `(stream_jpeg_bytes, full_resolution_image)`, or None when Pillow
+    cannot reach the display.
+
+    Grabbing in-process is what makes a high frame rate possible: shelling out
+    to ImageMagick costs ~130ms per frame, while a grab plus JPEG encode is
+    closer to 7ms. The stream copy is downscaled and lossy for bandwidth; the
+    full-resolution image is kept so the finished run can be saved as a crisp
+    PNG.
+    """
+    global _pillow
+
+    if _pillow is False:
+        return None
+
+    if _pillow is None:
+        try:
+            from PIL import Image, ImageGrab  # noqa: PLC0415
+
+            _pillow = (Image, ImageGrab)
+        except Exception:  # noqa: BLE001 - fall back to ImageMagick
+            _pillow = False
+            return None
+
+    image_module, grab_module = _pillow
+
+    try:
+        image = grab_module.grab(xdisplay=f":{DISPLAY_NUMBER}")
+    except Exception:  # noqa: BLE001
+        return None
+
+    stream = image
+    if width and width < image.width:
+        height = round(image.height * width / image.width)
+        stream = image.resize((width, height), image_module.BILINEAR)
+
+    buffer = io.BytesIO()
+    stream.convert("RGB").save(buffer, "JPEG", quality=quality)
+    return buffer.getvalue(), image
+
+
+def encode_still(image) -> bytes | None:
+    """Encode the full-resolution frame as PNG for the finished run."""
+    if image is None:
+        return None
+    try:
+        buffer = io.BytesIO()
+        image.save(buffer, "PNG", compress_level=1)
+        return buffer.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def capture_display() -> bytes | None:
-    """Screenshot the virtual display as PNG bytes."""
+    """Fallback capture via ImageMagick, used when Pillow is unavailable."""
     display = f":{DISPLAY_NUMBER}"
     attempts = (
         ["import", "-display", display, "-window", "root", "png:-"],
@@ -190,6 +251,13 @@ def display_has_window() -> bool:
     return re.search(rb"^\s+0x[0-9a-fA-F]+\s", result.stdout, re.MULTILINE) is not None
 
 
+def track_stability(current: bytes, previous: bytes | None, stable_since: float | None) -> float | None:
+    """Return when the display last changed, or None if it just did."""
+    if previous is not None and current == previous:
+        return stable_since if stable_since is not None else time.monotonic()
+    return None
+
+
 def stop_process(process: subprocess.Popen) -> None:
     """Kill the child and everything it spawned."""
     if process.poll() is not None:
@@ -213,9 +281,18 @@ def run(request: dict) -> dict:
     screen = str(request.get("screen") or "1024x768x24")
 
     policy = request.get("capturePolicy") or {}
-    first_capture_at_ms = int(policy.get("firstCaptureAtMs") or 200)
-    capture_interval_ms = int(policy.get("captureIntervalMs") or 120)
-    stable_frames_required = max(1, int(policy.get("stableFramesRequired") or 3))
+    first_capture_at_ms = int(policy.get("firstCaptureAtMs") or 150)
+    # Settling is measured in time, not frames: at 60fps a frame count that
+    # looked generous at 8fps is only a few milliseconds, and a program that
+    # sleeps between turtle steps would look "finished" almost immediately.
+    stable_ms = max(100, int(policy.get("stableMs") or 600))
+    stream_fps = max(1, min(120, int(policy.get("streamFps") or 60)))
+    stream_quality = max(20, min(95, int(policy.get("streamQuality") or 60)))
+    stream_width = max(0, int(policy.get("streamWidth") or 800))
+    capture_interval_ms = 1000.0 / stream_fps
+    # Escape hatch: forces the slower ImageMagick path, which is also how that
+    # fallback is exercised in tests.
+    force_fallback = bool(request.get("forceFallbackCapture"))
 
     if entry_file not in files:
         return {"ok": False, "error": f"entry file {entry_file!r} is not in the project"}
@@ -274,11 +351,14 @@ def run(request: dict) -> dict:
     out_drain.start()
     err_drain.start()
 
-    frame: bytes | None = None
     previous_frame: bytes | None = None
+    # Fallback still, when Pillow is not driving the capture.
+    frame_png: bytes | None = None
+    # Last full-resolution frame, encoded as PNG once the run finishes.
+    still_image = None
     timed_out = False
     settled = False
-    stable_count = 0
+    stable_since: float | None = None
     frame_seq = 0
     last_capture_at = 0.0
 
@@ -297,41 +377,57 @@ def run(request: dict) -> dict:
             and (time.monotonic() - last_capture_at) * 1000 >= capture_interval_ms
         ):
             last_capture_at = time.monotonic()
-            shot = capture_display()
+
+            grabbed = None if force_fallback else grab_display(stream_width, stream_quality)
+            if grabbed is None:
+                # Pillow is unavailable; fall back to a slower ImageMagick path.
+                still = capture_display()
+                if still is not None and display_has_window():
+                    frame_png = still
+                    frame_seq += 1
+                    emit_frame(frame_seq, int(elapsed_ms), still, "png")
+                    stable_since = track_stability(still, previous_frame, stable_since)
+                    previous_frame = still
+                    if stable_since is not None and (time.monotonic() - stable_since) * 1000 >= stable_ms:
+                        settled = True
+                        break
+                time.sleep(0.02)
+                continue
+
+            stream_bytes, image = grabbed
 
             # Only frames with a mapped window are worth sending: before the
             # first window appears there is nothing to look at.
-            if shot is not None and display_has_window():
-                frame = shot
+            if display_has_window():
+                still_image = image
                 frame_seq += 1
-                emit_frame(frame_seq, int(elapsed_ms), shot)
+                emit_frame(frame_seq, int(elapsed_ms), stream_bytes, "jpeg")
 
-                if shot == previous_frame:
-                    stable_count += 1
-                else:
-                    stable_count = 1
-                previous_frame = shot
+                stable_since = track_stability(stream_bytes, previous_frame, stable_since)
+                previous_frame = stream_bytes
 
-                # A window that has stopped changing is a program sitting in
-                # its main loop, so the run can end rather than burn the whole
-                # timeout. Requiring several stable frames keeps a pause in a
-                # slow animation from ending it early.
-                if stable_count >= stable_frames_required:
+                # A window that has not changed for a while is a program sitting
+                # in its main loop, so the run can end rather than burn the whole
+                # timeout. Measuring in time keeps a pause between animation
+                # steps from being mistaken for the end.
+                if stable_since is not None and (time.monotonic() - stable_since) * 1000 >= stable_ms:
                     settled = True
                     break
 
-        time.sleep(0.02)
+        time.sleep(0.002)
 
     duration_ms = int((time.monotonic() - started) * 1000)
 
     # About to terminate a program that is still running: take one last look
     # while its window is still on the display.
-    if display_process is not None and process.poll() is None:
-        shot = capture_display()
-        if shot is not None and display_has_window() and shot != frame:
-            frame = shot
-            frame_seq += 1
-            emit_frame(frame_seq, duration_ms, shot)
+    if display_process is not None and process.poll() is None and display_has_window():
+        grabbed = None if force_fallback else grab_display(stream_width, stream_quality)
+        if grabbed is not None:
+            stream_bytes, image = grabbed
+            if stream_bytes != previous_frame:
+                still_image = image
+                frame_seq += 1
+                emit_frame(frame_seq, duration_ms, stream_bytes, "jpeg")
 
     if process.poll() is None:
         stop_process(process)
@@ -351,6 +447,14 @@ def run(request: dict) -> dict:
 
     exit_code = process.returncode if not timed_out else -1
 
+    # Prefer a crisp PNG of the last full-resolution frame; fall back to
+    # whatever the stream (or ImageMagick) produced.
+    still_png = None
+    if still_image is not None and hasattr(still_image, "save"):
+        still_png = encode_still(still_image)
+    if still_png is None:
+        still_png = frame_png
+
     return {
         "ok": True,
         "stdout": out_drain.text(),
@@ -358,10 +462,12 @@ def run(request: dict) -> dict:
         "exitCode": exit_code,
         "timedOut": timed_out,
         "durationMs": duration_ms,
-        "image": base64.b64encode(frame).decode("ascii") if frame else None,
+        "image": base64.b64encode(still_png).decode("ascii") if still_png else None,
         "hadDisplay": display_process is not None,
         "settled": settled,
         "frameCount": frame_seq,
+        "streamFps": stream_fps,
+        "streamWidth": stream_width,
     }
 
 

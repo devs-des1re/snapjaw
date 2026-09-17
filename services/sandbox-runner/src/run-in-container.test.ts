@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { parseHelperLine, type HelperEvent } from "./run-in-container.js";
 
-function frameLine(seq: number, png = "AAAA"): string {
-  return JSON.stringify({ type: "frame", seq, atMs: seq * 100, png });
+function frameLine(seq: number, data = "AAAA"): string {
+  return JSON.stringify({ type: "frame", seq, atMs: seq * 100, format: "jpeg", data });
 }
 
 function resultLine(extra: Record<string, unknown> = {}): string {
@@ -13,7 +13,7 @@ function resultLine(extra: Record<string, unknown> = {}): string {
 describe("parseHelperLine", () => {
   it("parses a frame event", () => {
     const event = parseHelperLine(frameLine(3));
-    expect(event).toMatchObject({ type: "frame", seq: 3, atMs: 300, png: "AAAA" });
+    expect(event).toMatchObject({ type: "frame", seq: 3, atMs: 300, format: "jpeg", data: "AAAA" });
   });
 
   it("parses a result event", () => {

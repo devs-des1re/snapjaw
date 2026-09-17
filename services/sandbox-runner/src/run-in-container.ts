@@ -22,11 +22,13 @@ export interface ContainerRunResult {
   frameCount: number;
 }
 
-/** One captured display frame, base64 PNG, as it was drawn. */
+/** One captured display frame, base64 encoded, as it was drawn. */
 export interface LiveFrame {
   seq: number;
   atMs: number;
-  png: string;
+  /** `jpeg` on the fast capture path, `png` on the ImageMagick fallback. */
+  format: string;
+  data: string;
 }
 
 interface HelperResultEvent {
@@ -47,7 +49,8 @@ interface HelperFrameEvent {
   type: "frame";
   seq?: number;
   atMs?: number;
-  png?: string;
+  format?: string;
+  data?: string;
 }
 
 export type HelperEvent = HelperResultEvent | HelperFrameEvent;
@@ -84,11 +87,12 @@ export function parseHelperLine(line: string): HelperEvent | null {
 }
 
 function toLiveFrame(event: HelperFrameEvent): LiveFrame | null {
-  if (typeof event.png !== "string" || event.png.length === 0) return null;
+  if (typeof event.data !== "string" || event.data.length === 0) return null;
   return {
     seq: typeof event.seq === "number" ? event.seq : 0,
     atMs: typeof event.atMs === "number" ? event.atMs : 0,
-    png: event.png,
+    format: typeof event.format === "string" ? event.format : "jpeg",
+    data: event.data,
   };
 }
 
@@ -125,10 +129,13 @@ export async function runInContainer(
     capture: needsDisplay,
     capturePolicy: {
       firstCaptureAtMs: config.firstCaptureAtMs ?? DEFAULT_CAPTURE_POLICY.firstCaptureAtMs,
-      captureIntervalMs: config.captureIntervalMs ?? DEFAULT_CAPTURE_POLICY.captureIntervalMs,
-      stableFramesRequired: config.stableFramesRequired,
+      stableMs: config.stableMs ?? DEFAULT_CAPTURE_POLICY.stableMs,
+      streamFps: config.streamFps ?? DEFAULT_CAPTURE_POLICY.streamFps,
+      streamQuality: config.streamQuality ?? DEFAULT_CAPTURE_POLICY.streamQuality,
+      streamWidth: config.streamWidth ?? DEFAULT_CAPTURE_POLICY.streamWidth,
     },
     screen: config.screen,
+    forceFallbackCapture: config.forceFallbackCapture,
   });
 
   // Collected in an array rather than a `let`: assignments made inside the

@@ -13,8 +13,12 @@ export interface RunnerConfig {
   screen: string;
   tmpfsSize: string;
   firstCaptureAtMs: number;
-  captureIntervalMs: number;
-  stableFramesRequired: number;
+  stableMs: number;
+  streamFps: number;
+  streamQuality: number;
+  streamWidth: number;
+  /** Force the slower ImageMagick capture path. Diagnostics and tests. */
+  forceFallbackCapture: boolean;
   token: string | null;
 }
 
@@ -49,9 +53,12 @@ export function loadConfig(env: Env = process.env): RunnerConfig {
     pidsLimit: readInt(env, "SANDBOX_PIDS_LIMIT", 128, 8),
     screen: readString(env, "SANDBOX_DISPLAY", "1024x768x24"),
     tmpfsSize: readString(env, "SANDBOX_TMPFS_SIZE", "128m"),
-    firstCaptureAtMs: readInt(env, "SANDBOX_FIRST_CAPTURE_MS", 150),
-    captureIntervalMs: readInt(env, "SANDBOX_CAPTURE_INTERVAL_MS", 120, 30),
-    stableFramesRequired: readInt(env, "SANDBOX_STABLE_FRAMES", 3, 1),
+    firstCaptureAtMs: readInt(env, "SANDBOX_FIRST_CAPTURE_MS", 150, 0),
+    stableMs: readInt(env, "SANDBOX_STABLE_MS", 600, 100),
+    streamFps: readInt(env, "SANDBOX_STREAM_FPS", 60, 1),
+    streamQuality: readInt(env, "SANDBOX_STREAM_QUALITY", 60, 20),
+    streamWidth: readInt(env, "SANDBOX_STREAM_WIDTH", 800, 0),
+    forceFallbackCapture: env.SANDBOX_FORCE_FALLBACK_CAPTURE === "1",
     token: env.SANDBOX_RUNNER_TOKEN?.trim() || null,
   };
 }
