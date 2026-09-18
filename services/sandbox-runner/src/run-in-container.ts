@@ -4,11 +4,13 @@ import { DEFAULT_CAPTURE_POLICY, projectNeedsDisplay } from "./capture-display.j
 import { transportTimeoutMs, type RunnerConfig } from "./config.js";
 import { DockerError, dockerExec, runDocker, runDockerStreaming } from "./docker.js";
 import { describeError, log as defaultLogger } from "./logger.js";
+import type { RunRegistry } from "./run-registry.js";
 
 export interface RunRequest {
   files: Record<string, string>;
   entryFile: string;
   timeoutMs?: number;
+  runId?: string;
 }
 
 export interface ContainerRunResult {
@@ -51,7 +53,23 @@ interface HelperFrameEvent {
   data?: string;
 }
 
-export type HelperEvent = HelperResultEvent | HelperFrameEvent;
+interface HelperInputEvent {
+  type: "input";
+  prompt?: string;
+}
+
+interface HelperOutputEvent {
+  type: "output";
+  stream?: string;
+  text?: string;
+}
+
+interface HelperWaitingEvent {
+  type: "waiting";
+}
+
+export type HelperEvent =
+  HelperResultEvent | HelperFrameEvent | HelperInputEvent | HelperOutputEvent | HelperWaitingEvent;
 
 export class RunFailedError extends Error {
   constructor(message: string) {
@@ -74,7 +92,15 @@ export function parseHelperLine(line: string): HelperEvent | null {
   if (typeof parsed !== "object" || parsed === null) return null;
 
   const { type } = parsed as { type?: unknown };
-  if (type === "frame" || type === "result") return parsed as HelperEvent;
+  if (
+    type === "frame" ||
+    type === "result" ||
+    type === "input" ||
+    type === "output" ||
+    type === "waiting"
+  ) {
+    return parsed as HelperEvent;
+  }
   return null;
 }
 
@@ -88,8 +114,16 @@ function toLiveFrame(event: HelperFrameEvent): LiveFrame | null {
   };
 }
 
+export interface RunOutputChunk {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
 export interface RunOptions {
   onFrame?: (frame: LiveFrame) => void;
+  onInput?: (prompt: string) => void;
+  onOutput?: (chunk: RunOutputChunk) => void;
+  runs?: RunRegistry;
   signal?: AbortSignal;
 }
 
@@ -101,7 +135,7 @@ export async function runInContainer(
 ): Promise<ContainerRunResult> {
   const timeoutMs = request.timeoutMs ?? config.runTimeoutMs;
   const needsDisplay = projectNeedsDisplay(request.files);
-  const runId = randomUUID().replace(/-/g, "").slice(0, 16);
+  const runId = request.runId ?? randomUUID().replace(/-/g, "").slice(0, 16);
 
   const payload = JSON.stringify({
     runId,
@@ -125,8 +159,13 @@ export async function runInContainer(
   const results: HelperResultEvent[] = [];
 
   const transport = await runDockerStreaming(["exec", "-i", container, "snapjaw-exec"], {
-    input: payload,
+    // One line, because the helper keeps reading stdin afterwards for answers to input().
+    input: `${payload}\n`,
     timeoutMs: transportTimeoutMs(config),
+    idleTimeoutMs: config.transportIdleMs,
+    // The program reads its answers from the same stdin, so the pipe stays open for the run.
+    keepStdinOpen: true,
+    onStart: (handle) => options.runs?.register(runId, handle),
     signal: options.signal,
     onStdoutLine: (line) => {
       const event = parseHelperLine(line);
@@ -138,14 +177,31 @@ export async function runInContainer(
         return;
       }
 
+      if (event.type === "input") {
+        options.runs?.expectsInput(runId);
+        options.onInput?.(typeof event.prompt === "string" ? event.prompt : "");
+        return;
+      }
+
+      if (event.type === "output") {
+        const text = typeof event.text === "string" ? event.text : "";
+        if (text) {
+          options.onOutput?.({
+            stream: event.stream === "stderr" ? "stderr" : "stdout",
+            text,
+          });
+        }
+        return;
+      }
+
+      if (event.type === "waiting") return;
+
       results.push(event);
     },
-  });
+  }).finally(() => options.runs?.unregister(runId));
 
   if (transport.timedOut) {
-    throw new RunFailedError(
-      `the sandbox did not answer within ${transportTimeoutMs(config)}ms and was abandoned`,
-    );
+    throw new RunFailedError("the sandbox stopped responding, so the run was abandoned");
   }
 
   const resultEvent = results.at(-1);
@@ -179,6 +235,7 @@ export async function resetContainer(
   const script = [
     "cd /",
     "pkill -9 -f '[s]napjaw-exec' >/dev/null 2>&1",
+    "pkill -9 -f '[s]napjaw-work' >/dev/null 2>&1",
     "pkill -9 -x Xvfb >/dev/null 2>&1",
     "find /tmp -mindepth 1 -maxdepth 1 -exec rm -rf {} + >/dev/null 2>&1",
     "mkdir -p /tmp/snapjaw-work",

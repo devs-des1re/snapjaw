@@ -116,8 +116,16 @@ export async function dockerExec(
   return runDocker(["exec", "-i", container, ...command], options);
 }
 
+export interface DockerStreamHandle {
+  write(data: string): void;
+  kill(): void;
+}
+
 export interface StreamingDockerOptions extends DockerOptions {
   onStdoutLine?: (line: string) => void;
+  onStart?: (handle: DockerStreamHandle) => void;
+  keepStdinOpen?: boolean;
+  idleTimeoutMs?: number;
   signal?: AbortSignal;
 }
 
@@ -128,8 +136,11 @@ export function runDockerStreaming(
   const {
     input,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    idleTimeoutMs = 0,
     maxBufferBytes = DEFAULT_MAX_BUFFER_BYTES,
     onStdoutLine,
+    onStart,
+    keepStdinOpen = false,
     signal,
   } = options;
 
@@ -147,18 +158,26 @@ export function runDockerStreaming(
     let pending = "";
     let droppedBytes = 0;
 
-    const timer =
-      timeoutMs > 0
-        ? setTimeout(() => {
-            timedOut = true;
-            child.kill("SIGKILL");
-          }, timeoutMs)
-        : null;
+    const abandon = () => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    };
+
+    const absoluteTimer = timeoutMs > 0 ? setTimeout(abandon, timeoutMs) : null;
+    let idleTimer: NodeJS.Timeout | null = null;
+
+    // An interactive run can sit on input() for a long time, so silence is the failure signal.
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = idleTimeoutMs > 0 ? setTimeout(abandon, idleTimeoutMs) : null;
+    };
+    armIdle();
 
     const finish = (action: () => void) => {
       if (settled) return;
       settled = true;
-      if (timer) clearTimeout(timer);
+      if (absoluteTimer) clearTimeout(absoluteTimer);
+      if (idleTimer) clearTimeout(idleTimer);
       signal?.removeEventListener("abort", onAbort);
       action();
     };
@@ -178,6 +197,8 @@ export function runDockerStreaming(
     }
 
     child.stdout.on("data", (chunk: Buffer) => {
+      armIdle();
+
       if (droppedBytes > 0 || !onStdoutLine) {
         droppedBytes += chunk.length;
         return;
@@ -223,7 +244,16 @@ export function runDockerStreaming(
     child.stdin.on("error", () => {
       // The child can exit before reading stdin; close reports it.
     });
-    child.stdin.end(input ?? "");
+
+    onStart?.({
+      write: (data) => {
+        if (!child.stdin.destroyed) child.stdin.write(data);
+      },
+      kill: () => child.kill("SIGKILL"),
+    });
+
+    child.stdin.write(input ?? "");
+    if (!keepStdinOpen) child.stdin.end();
   });
 }
 

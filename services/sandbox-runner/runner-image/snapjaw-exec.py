@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-# Runs one JSON run request from stdin and streams NDJSON frame/result events on stdout.
+# Runs one JSON run request from stdin and streams NDJSON frame/output/input/result events on stdout.
 
 from __future__ import annotations
 
 import base64
+import codecs
 import io
 import json
 import os
 import re
+import select
 import shutil
 import signal
 import subprocess
@@ -19,14 +21,26 @@ WORK_ROOT = "/tmp/snapjaw-work"
 DISPLAY_NUMBER = 99
 XVFB_READY_TIMEOUT_S = 10.0
 OUTPUT_TRUNCATION_NOTE = "\n[snapjaw] output truncated\n"
+SITECUSTOMIZE_PATH = "/opt/snapjaw"
+INPUT_REQUEST_FD_ENV = "SNAPJAW_INPUT_REQUEST_FD"
+INPUT_ANSWER_FD_ENV = "SNAPJAW_INPUT_ANSWER_FD"
+INPUT_HEARTBEAT_S = 5.0
+# Per prompt, and across the whole run: a program cannot hold a sandbox open forever.
+INPUT_WAIT_LIMIT_S = 300.0
+INPUT_TOTAL_LIMIT_S = 600.0
 
 # None until we try; False once Pillow is known to be unusable.
 _pillow = None
 
+_emit_lock = threading.Lock()
+
 
 def emit_event(payload: dict) -> None:
-    sys.stdout.write(json.dumps(payload) + "\n")
-    sys.stdout.flush()
+    line = json.dumps(payload) + "\n"
+    # The input bridge emits from its own thread, so a frame cannot split another event.
+    with _emit_lock:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def emit_frame(seq: int, at_ms: int, payload: bytes, fmt: str = "jpeg") -> None:
@@ -55,23 +69,103 @@ def safe_join(root: str, name: str) -> str:
     return target
 
 
+class LineReader:
+    """Reads newline-delimited UTF-8 lines from a file descriptor with no read-ahead."""
+
+    def __init__(self, fd: int) -> None:
+        self.fd = fd
+        self.buffer = b""
+
+    def read_line(self, timeout_s: float | None) -> str | None:
+        while b"\n" not in self.buffer:
+            ready, _, _ = select.select([self.fd], [], [], timeout_s)
+            if not ready:
+                return None
+            chunk = os.read(self.fd, 4096)
+            if not chunk:
+                return ""
+            self.buffer += chunk
+
+        line, self.buffer = self.buffer.split(b"\n", 1)
+        return line.decode("utf-8", errors="replace")
+
+
+class InputBridge(threading.Thread):
+    """Carries input() calls from the program to the client and the answers back."""
+
+    def __init__(self, request_fd: int, answer_fd: int, reader: LineReader) -> None:
+        super().__init__(daemon=True)
+        self.request = os.fdopen(request_fd, "r", encoding="utf-8")
+        self.answer = os.fdopen(answer_fd, "w", encoding="utf-8", buffering=1)
+        self.reader = reader
+        self.pending = False
+        self.waited_s = 0.0
+
+    def run(self) -> None:
+        for line in self.request:
+            emit_event({"type": "input", "prompt": self.prompt_of(line)})
+            self.pending = True
+            value = self.read_answer()
+            self.pending = False
+            self.answer.write(value + "\n")
+
+    @staticmethod
+    def prompt_of(line: str) -> str:
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            return ""
+        if isinstance(payload, dict) and isinstance(payload.get("prompt"), str):
+            return payload["prompt"]
+        return ""
+
+    def read_answer(self) -> str:
+        started = time.monotonic()
+        budget = max(0.0, INPUT_TOTAL_LIMIT_S - self.waited_s)
+        deadline = started + min(INPUT_WAIT_LIMIT_S, budget)
+
+        try:
+            while True:
+                timeout = min(INPUT_HEARTBEAT_S, max(0.0, deadline - time.monotonic()))
+                line = self.reader.read_line(timeout)
+                if line is not None:
+                    return line
+                if time.monotonic() >= deadline:
+                    return ""
+                # Keeps the hop to the runner awake while somebody is typing.
+                emit_event({"type": "waiting"})
+        finally:
+            self.waited_s += time.monotonic() - started
+
+
 class StreamDrain(threading.Thread):
-    def __init__(self, stream, limit: int) -> None:
+    def __init__(self, stream, limit: int, name: str) -> None:
         super().__init__(daemon=True)
         self.stream = stream
         self.limit = limit
+        self.name = name
         self.buffer = bytearray()
         self.truncated = False
+        self.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
     def run(self) -> None:
+        # read1 returns as soon as anything is available; read() would wait for a full buffer,
+        # which would hold a prompt back until the program exits.
+        read = getattr(self.stream, "read1", None) or self.stream.read
+
         while True:
-            chunk = self.stream.read(8192)
+            chunk = read(8192)
             if not chunk:
                 break
-            if len(self.buffer) < self.limit:
-                self.buffer.extend(chunk[: self.limit - len(self.buffer)])
+
+            kept = chunk[: max(0, self.limit - len(self.buffer))]
+            if kept:
+                self.buffer.extend(kept)
+                # Mirrored live so a prompt is not the first thing the console ever shows.
+                emit_event({"type": "output", "stream": self.name, "text": self.decoder.decode(kept)})
             else:
                 self.truncated = True
+
         self.stream.close()
 
     def text(self) -> str:
@@ -230,7 +324,7 @@ def stop_process(process: subprocess.Popen) -> None:
         pass
 
 
-def run(request: dict) -> dict:
+def run(request: dict, reader: LineReader) -> dict:
     files = request.get("files") or {}
     entry_file = request.get("entryFile") or ""
     timeout_ms = int(request.get("timeoutMs") or 5000)
@@ -276,11 +370,17 @@ def run(request: dict) -> dict:
         "PYTHONIOENCODING": "utf-8",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": SITECUSTOMIZE_PATH,
         "MPLBACKEND": "Agg",
         "TMPDIR": workdir,
     }
     if display_process is not None:
         environment["DISPLAY"] = f":{DISPLAY_NUMBER}"
+
+    request_fd, request_write_fd = os.pipe()
+    answer_read_fd, answer_fd = os.pipe()
+    environment[INPUT_REQUEST_FD_ENV] = str(request_write_fd)
+    environment[INPUT_ANSWER_FD_ENV] = str(answer_read_fd)
 
     started = time.monotonic()
     try:
@@ -292,16 +392,26 @@ def run(request: dict) -> dict:
             stderr=subprocess.PIPE,
             env=environment,
             start_new_session=True,
+            pass_fds=(request_write_fd, answer_read_fd),
         )
     except OSError as exc:
+        for fd in (request_fd, request_write_fd, answer_read_fd, answer_fd):
+            os.close(fd)
         if display_process is not None:
             stop_process(display_process)
         shutil.rmtree(workdir, ignore_errors=True)
         return {"ok": False, "error": f"could not start the program: {exc}"}
 
+    # The child owns these ends now; holding them open here would keep its reads from ending.
+    os.close(request_write_fd)
+    os.close(answer_read_fd)
+
+    bridge = InputBridge(request_fd, answer_fd, reader)
+    bridge.start()
+
     assert process.stdout is not None and process.stderr is not None
-    out_drain = StreamDrain(process.stdout, max_output_bytes)
-    err_drain = StreamDrain(process.stderr, max_output_bytes)
+    out_drain = StreamDrain(process.stdout, max_output_bytes, "stdout")
+    err_drain = StreamDrain(process.stderr, max_output_bytes, "stderr")
     out_drain.start()
     err_drain.start()
 
@@ -313,12 +423,27 @@ def run(request: dict) -> dict:
     stable_since: float | None = None
     frame_seq = 0
     last_capture_at = 0.0
+    waiting_for_input = False
 
     while True:
         if process.poll() is not None:
             break
 
-        elapsed_ms = (time.monotonic() - started) * 1000
+        # A program waiting on input() is not spending its own time or settling its display.
+        if bridge.pending:
+            if not waiting_for_input:
+                waiting_for_input = True
+                stable_since = None
+                previous_frame = None
+            time.sleep(0.02)
+            continue
+
+        if waiting_for_input:
+            waiting_for_input = False
+            stable_since = None
+            previous_frame = None
+
+        elapsed_ms = (time.monotonic() - started) * 1000 - bridge.waited_s * 1000
         if elapsed_ms >= timeout_ms:
             timed_out = True
             break
@@ -361,7 +486,7 @@ def run(request: dict) -> dict:
 
         time.sleep(0.002)
 
-    duration_ms = int((time.monotonic() - started) * 1000)
+    duration_ms = int((time.monotonic() - started) * 1000 - bridge.waited_s * 1000)
 
     if display_process is not None and process.poll() is None and display_has_window():
         grabbed = None if force_fallback else grab_display(stream_width, stream_quality)
@@ -413,10 +538,17 @@ def run(request: dict) -> dict:
 
 
 def main() -> None:
+    # The request is one line; everything after it on stdin is answers to input().
+    reader = LineReader(sys.stdin.fileno())
+
     try:
-        raw = sys.stdin.read()
+        raw = reader.read_line(None)
     except OSError as exc:
         fail(f"could not read run request: {exc}")
+        return
+
+    if not raw:
+        fail("could not read run request")
         return
 
     try:
@@ -430,7 +562,7 @@ def main() -> None:
         return
 
     try:
-        emit_event({"type": "result", **run(request)})
+        emit_event({"type": "result", **run(request, reader)})
     except Exception as exc:  # noqa: BLE001 - the runner must always get a result
         emit_event({"type": "result", "ok": False, "error": f"{type(exc).__name__}: {exc}"})
 

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_FILE_CHARACTERS,
+  MAX_INPUT_CHARACTERS,
   MAX_SHARED_FILES,
   createSharedFileSchema,
+  runInputSchema,
   runRequestSchema,
   runnerRunResultSchema,
   sharedFileIdSchema,
@@ -215,5 +217,55 @@ describe("runnerRunResultSchema", () => {
     [{ ...VALID, image: undefined }, "a missing image field"],
   ])("rejects %j (%s)", (payload, _description) => {
     expect(runnerRunResultSchema.safeParse(payload).success).toBe(false);
+  });
+});
+
+const RUN_ID = "0123456789abcdef0123456789abcdef";
+
+describe("runRequestSchema with a run id", () => {
+  it("accepts an optional run id", () => {
+    const result = runRequestSchema.safeParse({ ...VALID_PROJECT, runId: RUN_ID });
+    expect(result.success).toBe(true);
+  });
+
+  it("still accepts a request without one", () => {
+    expect(runRequestSchema.safeParse(VALID_PROJECT).success).toBe(true);
+  });
+
+  it.each([
+    ["0123456789ABCDEF0123456789ABCDEF", "uppercase hex"],
+    ["0123456789abcdef", "too short"],
+    ["0123456789abcdef0123456789abcdeg", "a non-hex character"],
+    ["../../etc/passwd", "a path"],
+  ])("rejects %j as a run id (%s)", (runId, _description) => {
+    expect(runRequestSchema.safeParse({ ...VALID_PROJECT, runId }).success).toBe(false);
+  });
+});
+
+describe("runInputSchema", () => {
+  it("accepts a line of input", () => {
+    expect(runInputSchema.safeParse({ runId: RUN_ID, value: "Alice" }).success).toBe(true);
+  });
+
+  it("accepts an empty line, which is what pressing Enter sends", () => {
+    expect(runInputSchema.safeParse({ runId: RUN_ID, value: "" }).success).toBe(true);
+  });
+
+  it("accepts text with quotes, newlines and unicode", () => {
+    const value = 'he said "hi"\n🦈';
+    expect(runInputSchema.safeParse({ runId: RUN_ID, value }).success).toBe(true);
+  });
+
+  it("rejects an over-long line", () => {
+    const value = "x".repeat(MAX_INPUT_CHARACTERS + 1);
+    expect(runInputSchema.safeParse({ runId: RUN_ID, value }).success).toBe(false);
+  });
+
+  it("rejects a missing value", () => {
+    expect(runInputSchema.safeParse({ runId: RUN_ID }).success).toBe(false);
+  });
+
+  it("rejects an unknown run id shape", () => {
+    expect(runInputSchema.safeParse({ runId: "nope", value: "hi" }).success).toBe(false);
   });
 });

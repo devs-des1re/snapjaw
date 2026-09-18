@@ -8,11 +8,18 @@ describe("projectNeedsDisplay", () => {
   });
 
   it("detects an aliased import", () => {
-    expect(projectNeedsDisplay({ "main.py": "import tkinter as tk\nroot = tk.Tk()\n" })).toBe(true);
+    expect(projectNeedsDisplay({ "main.py": "import turtle as t\nt.forward(10)\n" })).toBe(true);
   });
 
   it("detects a from-import", () => {
-    expect(projectNeedsDisplay({ "main.py": "from tkinter import Tk\n" })).toBe(true);
+    expect(projectNeedsDisplay({ "main.py": "from turtle import forward\n" })).toBe(true);
+  });
+
+  it("ignores tkinter, which is not available in the image", () => {
+    expect(projectNeedsDisplay({ "main.py": "import tkinter as tk\nroot = tk.Tk()\n" })).toBe(
+      false,
+    );
+    expect(projectNeedsDisplay({ "main.py": "from tkinter import Tk\n" })).toBe(false);
   });
 
   it("detects an indented import inside a function", () => {

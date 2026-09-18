@@ -19,8 +19,28 @@ export interface LiveFrame {
   src: string;
 }
 
+export interface LiveOutput {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface OutputBuffer {
+  stdout: string;
+  stderr: string;
+}
+
 export interface StreamHandlers {
+  runId?: string;
   onFrame?: (frame: LiveFrame) => void;
+  onOutput?: (chunk: LiveOutput) => void;
+  onInput?: (prompt: string) => void;
+}
+
+// Matches the runner's run id format, and needs no secure context the way crypto.randomUUID does.
+export function newRunId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function readRunResult(payload: unknown): RunResult | null {
@@ -64,7 +84,7 @@ export async function runProjectStreaming(
     response = await fetch("/api/run/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ files: projectToFileRecord(files), entryFile }),
+      body: JSON.stringify({ files: projectToFileRecord(files), entryFile, runId: handlers.runId }),
     });
   } catch {
     return { ok: false, message: "Could not reach Snapjaw. Check your connection and try again." };
@@ -120,6 +140,20 @@ export async function runProjectStreaming(
       return;
     }
 
+    if (type === "output") {
+      const { stream, text } = event as { stream?: unknown; text?: unknown };
+      if (typeof text === "string" && text.length > 0) {
+        handlers.onOutput?.({ stream: stream === "stderr" ? "stderr" : "stdout", text });
+      }
+      return;
+    }
+
+    if (type === "input") {
+      const { prompt } = event as { prompt?: unknown };
+      handlers.onInput?.(typeof prompt === "string" ? prompt : "");
+      return;
+    }
+
     if (type === "error") {
       const { message } = event as { message?: unknown };
       failure = typeof message === "string" ? message : "The sandbox failed during the run.";
@@ -154,4 +188,30 @@ export async function runProjectStreaming(
   if (failure) return { ok: false, message: failure };
   if (!result) return { ok: false, message: "The sandbox returned an unexpected response." };
   return { ok: true, result };
+}
+
+export type InputOutcome = { ok: true } | { ok: false; message: string };
+
+// One line for a program that is blocked on input().
+export async function sendRunInput(runId: string, value: string): Promise<InputOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/api/run/input", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId, value }),
+    });
+  } catch {
+    return { ok: false, message: "Could not reach Snapjaw. Check your connection and try again." };
+  }
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    return {
+      ok: false,
+      message: readApiError(payload) ?? "The program is no longer waiting for input.",
+    };
+  }
+
+  return { ok: true };
 }

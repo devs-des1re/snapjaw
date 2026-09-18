@@ -27,6 +27,23 @@ describe("parseHelperLine", () => {
     expect(event.image).toBe(image);
   });
 
+  it("parses an input request", () => {
+    expect(parseHelperLine(JSON.stringify({ type: "input", prompt: "Name? " }))).toMatchObject({
+      type: "input",
+      prompt: "Name? ",
+    });
+  });
+
+  it("parses a live output chunk", () => {
+    expect(
+      parseHelperLine(JSON.stringify({ type: "output", stream: "stderr", text: "boom\n" })),
+    ).toMatchObject({ type: "output", stream: "stderr", text: "boom\n" });
+  });
+
+  it("parses a heartbeat", () => {
+    expect(parseHelperLine(JSON.stringify({ type: "waiting" }))).toMatchObject({ type: "waiting" });
+  });
+
   it("ignores surrounding whitespace", () => {
     expect(parseHelperLine(`  ${frameLine(1)}  `)).toMatchObject({ type: "frame" });
   });
@@ -48,9 +65,12 @@ describe("parseHelperLine", () => {
     const events: HelperEvent[] = [
       parseHelperLine(frameLine(1))!,
       parseHelperLine(resultLine())!,
+      parseHelperLine(JSON.stringify({ type: "input", prompt: "" }))!,
+      parseHelperLine(JSON.stringify({ type: "output", stream: "stdout", text: "hi\n" }))!,
+      parseHelperLine(JSON.stringify({ type: "waiting" }))!,
     ].filter(Boolean);
 
     const kinds = events.map((event) => event.type);
-    expect(kinds).toEqual(["frame", "result"]);
+    expect(kinds).toEqual(["frame", "result", "input", "output", "waiting"]);
   });
 });

@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { projectToFileRecord } from "./run";
+import { newRunId, projectToFileRecord } from "./run";
+import { RUN_ID_PATTERN } from "./validation";
+
+describe("newRunId", () => {
+  it("produces the shape the runner accepts", () => {
+    expect(newRunId()).toMatch(RUN_ID_PATTERN);
+  });
+
+  it("does not repeat itself", () => {
+    const ids = new Set(Array.from({ length: 200 }, () => newRunId()));
+    expect(ids.size).toBe(200);
+  });
+
+  it("does not rely on crypto.randomUUID, which needs a secure context", () => {
+    expect(typeof crypto.getRandomValues).toBe("function");
+  });
+});
 
 describe("projectToFileRecord", () => {
   it("turns the file list into the record the API expects", () => {

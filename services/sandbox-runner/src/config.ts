@@ -18,6 +18,8 @@ export interface RunnerConfig {
   streamQuality: number;
   streamWidth: number;
   forceFallbackCapture: boolean;
+  inputWaitMs: number;
+  transportIdleMs: number;
   token: string | null;
 }
 
@@ -58,11 +60,13 @@ export function loadConfig(env: Env = process.env): RunnerConfig {
     streamQuality: readInt(env, "SANDBOX_STREAM_QUALITY", 60, 20),
     streamWidth: readInt(env, "SANDBOX_STREAM_WIDTH", 800, 0),
     forceFallbackCapture: env.SANDBOX_FORCE_FALLBACK_CAPTURE === "1",
+    inputWaitMs: readInt(env, "SANDBOX_INPUT_WAIT_MS", 600_000, 0),
+    transportIdleMs: readInt(env, "SANDBOX_TRANSPORT_IDLE_MS", 60_000, 0),
     token: env.SANDBOX_RUNNER_TOKEN?.trim() || null,
   };
 }
 
-// Must outlive the helper's own wall-clock limit.
+// Must outlive the helper's own wall-clock limit, including every wait on input().
 export function transportTimeoutMs(config: RunnerConfig): number {
-  return config.runTimeoutMs + 15000;
+  return config.runTimeoutMs + config.inputWaitMs + 15000;
 }

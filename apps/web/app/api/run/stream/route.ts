@@ -5,8 +5,9 @@ import { runRequestSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-// Outer bound on the hop to the runner; the runner bounds the program itself.
-const RUNNER_TIMEOUT_MS = 60_000;
+// Silence, not elapsed time, is the failure signal: a run can sit on input() while somebody types.
+const RUNNER_IDLE_MS = 60_000;
+const RUNNER_MAX_MS = 11 * 60_000;
 
 // Checked before parsing so an oversized body is rejected without buffering it.
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
@@ -77,7 +78,15 @@ export async function POST(request: Request): Promise<Response> {
 
   const token = process.env.SANDBOX_RUNNER_TOKEN?.trim();
   const timeoutController = new AbortController();
-  const timer = setTimeout(() => timeoutController.abort(), RUNNER_TIMEOUT_MS);
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const armIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => timeoutController.abort(), RUNNER_IDLE_MS);
+  };
+
+  armIdle();
+  const maxTimer = setTimeout(() => timeoutController.abort(), RUNNER_MAX_MS);
 
   // Abandon the runner request if the browser goes away, so the sandbox stops drawing.
   const onClientAbort = () => timeoutController.abort();
@@ -96,7 +105,8 @@ export async function POST(request: Request): Promise<Response> {
       cache: "no-store",
     });
   } catch (error) {
-    clearTimeout(timer);
+    clearTimeout(idleTimer ?? undefined);
+    clearTimeout(maxTimer);
     request.signal.removeEventListener("abort", onClientAbort);
 
     const aborted = error instanceof Error && error.name === "AbortError";
@@ -113,7 +123,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!upstream.ok || !upstream.body) {
-    clearTimeout(timer);
+    clearTimeout(idleTimer ?? undefined);
+    clearTimeout(maxTimer);
     request.signal.removeEventListener("abort", onClientAbort);
 
     const payload: unknown = await upstream.json().catch(() => null);
@@ -136,7 +147,8 @@ export async function POST(request: Request): Promise<Response> {
   });
 
   const cleanup = () => {
-    clearTimeout(timer);
+    if (idleTimer) clearTimeout(idleTimer);
+    clearTimeout(maxTimer);
     request.signal.removeEventListener("abort", onClientAbort);
   };
 
@@ -151,6 +163,8 @@ export async function POST(request: Request): Promise<Response> {
           cleanup();
           return;
         }
+        // Every frame, line of output and heartbeat is proof the sandbox is still working.
+        armIdle();
         controller.enqueue(value);
       } catch (error) {
         controller.error(error);

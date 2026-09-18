@@ -7,11 +7,15 @@ import type { RunnerConfig } from "./config.js";
 import { describeError, log } from "./logger.js";
 import { PoolUnavailableError, type PoolManager } from "./pool-manager.js";
 import { RunFailedError, runInContainer } from "./run-in-container.js";
+import { RunRegistry } from "./run-registry.js";
 
 // Backstop only: the web layer owns the user-facing limits.
 const BACKSTOP_MAX_FILES = 50;
 const BACKSTOP_MAX_FILE_CHARACTERS = 256 * 1024;
 const BACKSTOP_MAX_TOTAL_CHARACTERS = 1024 * 1024;
+const MAX_INPUT_CHARACTERS = 4096;
+
+const runIdSchema = z.string().regex(/^[a-f0-9]{32}$/, "runId must be 32 lowercase hex characters");
 
 const fileNameSchema = z
   .string()
@@ -36,11 +40,17 @@ export const runRequestSchema = z
       ),
     entryFile: z.string().min(1),
     timeoutMs: z.number().int().min(100).max(30_000).optional(),
+    runId: runIdSchema.optional(),
   })
   .refine((value) => Object.hasOwn(value.files, value.entryFile), {
     message: "entryFile must be one of the files",
     path: ["entryFile"],
   });
+
+export const runInputSchema = z.object({
+  runId: runIdSchema,
+  value: z.string().max(MAX_INPUT_CHARACTERS, "that line of input is too long"),
+});
 
 function tokenMatches(expected: string, provided: string): boolean {
   const a = Buffer.from(expected);
@@ -69,6 +79,7 @@ function requireToken(config: RunnerConfig) {
 
 export function createApp(config: RunnerConfig, pool: PoolManager) {
   const app = express();
+  const runs = new RunRegistry();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "4mb" }));
 
@@ -129,6 +140,7 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
 
     try {
       const result = await runInContainer(member.name, parsed.data, config, {
+        runs,
         signal: controller.signal,
         onFrame: (frame) => {
           write({
@@ -139,6 +151,8 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
             data: frame.data,
           });
         },
+        onInput: (prompt) => write({ type: "input", prompt }),
+        onOutput: (chunk) => write({ type: "output", stream: chunk.stream, text: chunk.text }),
       });
 
       write({ type: "result", entryFile: parsed.data.entryFile, ...result });
@@ -174,6 +188,24 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
     }
   });
 
+  app.post("/run/input", requireToken(config), (request, response) => {
+    const parsed = runInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({
+        error: "invalid input",
+        details: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+      });
+      return;
+    }
+
+    if (!runs.send(parsed.data.runId, parsed.data.value)) {
+      response.status(409).json({ error: "that run is not waiting for input" });
+      return;
+    }
+
+    response.json({ ok: true, activeRuns: runs.size() });
+  });
+
   app.post("/run", requireToken(config), async (request, response) => {
     const parsed = runRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -198,7 +230,7 @@ export function createApp(config: RunnerConfig, pool: PoolManager) {
     }
 
     try {
-      const result = await runInContainer(member.name, parsed.data, config);
+      const result = await runInContainer(member.name, parsed.data, config, { runs });
 
       log("info", "run completed", {
         entryFile: parsed.data.entryFile,

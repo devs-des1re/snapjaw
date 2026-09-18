@@ -118,12 +118,14 @@ Every response includes `timestamp` and `version`. Errors always look like:
 | GET    | `/api/ping`       | Round-trip latency.                               |
 | POST   | `/api/run`        | Run a project, wait, return the result.           |
 | POST   | `/api/run/stream` | Run a project, stream display frames live.        |
+| POST   | `/api/run/input`  | Answer an `input()` in a run that is waiting.     |
 | POST   | `/api/file`       | Save a project, get back `{ id, url, path }`.     |
 | GET    | `/api/file/[id]`  | Load a shared project. 404 if missing or deleted. |
 
-`/api/run/stream` streams newline-delimited JSON — a `frame` message per captured frame, then one
-final `result` or `error` message. The editor uses this endpoint; `/api/run` is the plain blocking
-version for scripted use.
+`/api/run/stream` streams newline-delimited JSON — a `frame` message per captured frame, `output`
+messages for text as the program prints it, an `input` message when it's blocked on `input()`, then
+one final `result` or `error` message. The editor uses this endpoint; `/api/run` is the plain
+blocking version for scripted use.
 
 ## How the sandbox works
 
@@ -140,16 +142,24 @@ memory/CPU/process-count caps, all Linux capabilities dropped, no privilege esca
 unprivileged user inside. Between runs, `/tmp` is fully wiped — a previous project's files can't
 leak into the next run.
 
-**Turtle and tkinter.** These need a real X display, so the executor starts a private Xvfb per run
-when a project imports either. Frames are captured with Pillow (not shelling out to ImageMagick,
+**Turtle and tkinter.** Turtle needs a real X display, so the executor starts a private Xvfb per
+run when a project imports it. Frames are captured with Pillow (not shelling out to ImageMagick,
 which is roughly 20x slower per frame) and streamed to the browser live at up to 60fps as they're
 drawn, then saved as a full-resolution PNG once the program settles. A run ends once the display
 stops changing for a short window — measured in time, not frame count, so it behaves consistently
 regardless of how fast frames are coming in.
 
-Programs need to keep their window open to be captured — call `turtle.done()` or `root.mainloop()`,
-same as running it locally. Without that the interpreter exits and there's nothing left to
-photograph.
+Programs need to keep their window open to be captured — call `turtle.done()`, same as running it
+locally. Without that the interpreter exits and there's nothing left to photograph.
+
+**Input.** `input()` works: the program's prompt appears in the output panel, an input line appears
+next to it, and whatever is typed is echoed into the transcript like a terminal. The prompt travels
+to the runner as a message and the answer comes back over `/api/run/input`, so the program's clock
+stops while it waits — a slow typist never trips the run timeout. A sandbox cannot be held open
+forever, though: five minutes per prompt and ten minutes per run.
+
+**tkinter is not available.** It's blocked at import with a message pointing at turtle. Turtle itself
+is built on tkinter, so the block lets turtle's own imports through and refuses everyone else's.
 
 **Docker access.** The runner is given the host's Docker socket rather than running its own nested
 Docker daemon (Docker-in-Docker). Socket access is effectively root on the host, which is fine here
@@ -177,7 +187,10 @@ alphabetically.
 - Typing offers quick suggestions: Python keywords and snippets, builtins and exceptions, the standard
   library on `import`, and the members of a module after `from … import` or a `.`. There's no language
   server behind it — the lists are static tables in `lib/python`, filtered by Monaco.
-- Ctrl or Cmd plus the wheel resizes the editor font.
+- Ctrl or Cmd plus the wheel resizes the editor font. Ctrl+Enter runs, and is handled in the capture
+  phase because Monaco claims that combination for itself.
+- A program that calls `input()` turns the output panel into a console: the prompt and the typed
+  answer stay in the transcript, so the finished output reads like the session that produced it.
 - Dark theme only, by default and by design.
 
 ## License

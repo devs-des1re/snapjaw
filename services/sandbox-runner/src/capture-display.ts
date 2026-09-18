@@ -14,8 +14,9 @@ export const DEFAULT_CAPTURE_POLICY: CapturePolicy = {
   streamWidth: 800,
 };
 
-// A line starting with # cannot match, so commented-out imports are ignored.
-const DISPLAY_MODULE_IMPORT = /^[ \t]*(?:import|from)[ \t]+(turtle|tkinter)\b/m;
+// A line starting with # cannot match, so commented-out imports are ignored. tkinter is gone
+// from the image, so only turtle still draws.
+const DISPLAY_MODULE_IMPORT = /^[ \t]*(?:import|from)[ \t]+(turtle)\b/m;
 
 export function projectNeedsDisplay(files: Record<string, string>): boolean {
   return Object.entries(files).some(

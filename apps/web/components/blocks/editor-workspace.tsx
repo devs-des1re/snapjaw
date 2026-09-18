@@ -29,7 +29,15 @@ import {
   updateFileContent,
   type ProjectFile,
 } from "@/lib/project";
-import { runProjectStreaming, type LiveFrame, type RunResult } from "@/lib/run";
+import {
+  newRunId,
+  runProjectStreaming,
+  sendRunInput,
+  type LiveFrame,
+  type LiveOutput,
+  type OutputBuffer,
+  type RunResult,
+} from "@/lib/run";
 
 // Monaco is browser-only, so the editor is loaded on the client.
 const EditorPanel = dynamic(
@@ -84,11 +92,20 @@ export function EditorWorkspace({
   const [wordWrap, setWordWrap] = useState(false);
   const [minimap, setMinimap] = useState(false);
   const [dialog, setDialog] = useState<"shortcuts" | null>(null);
+  const [liveOutput, setLiveOutput] = useState<OutputBuffer>({ stdout: "", stderr: "" });
+  const [awaitingInput, setAwaitingInput] = useState(false);
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [isSendingInput, setIsSendingInput] = useState(false);
 
   // Frames bypass React state: setState coalesced them and dropped most of the animation.
   const liveFrameRef = useRef<LiveFrame | null>(null);
   const frameCountRef = useRef(0);
   const lastFrameStatusAt = useRef(0);
+
+  // Transcript text lands far more often than the console needs repainting.
+  const liveOutputRef = useRef<OutputBuffer>({ stdout: "", stderr: "" });
+  const lastOutputFlushAt = useRef(0);
+  const runIdRef = useRef<string | null>(null);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
@@ -124,18 +141,41 @@ export function EditorWorkspace({
     return () => pane.removeEventListener("wheel", onWheel);
   }, []);
 
+  const pushOutput = useCallback((chunk: LiveOutput) => {
+    const current = liveOutputRef.current;
+    liveOutputRef.current = {
+      stdout: chunk.stream === "stdout" ? current.stdout + chunk.text : current.stdout,
+      stderr: chunk.stream === "stderr" ? current.stderr + chunk.text : current.stderr,
+    };
+
+    const now = Date.now();
+    if (now - lastOutputFlushAt.current >= 100) {
+      lastOutputFlushAt.current = now;
+      setLiveOutput(liveOutputRef.current);
+    }
+  }, []);
+
   const handleRun = useCallback(async () => {
     if (isRunning) return;
     setIsRunning(true);
     setRunError(null);
     setResult(null);
     setFrameCount(0);
+    setInputError(null);
+    setAwaitingInput(false);
     liveFrameRef.current = null;
     frameCountRef.current = 0;
     lastFrameStatusAt.current = 0;
+    liveOutputRef.current = { stdout: "", stderr: "" };
+    lastOutputFlushAt.current = 0;
+    setLiveOutput(liveOutputRef.current);
+
+    const runId = newRunId();
+    runIdRef.current = runId;
 
     try {
       const outcome = await runProjectStreaming(files, active.name, {
+        runId,
         onFrame: (frame) => {
           liveFrameRef.current = frame;
           frameCountRef.current += 1;
@@ -147,6 +187,8 @@ export function EditorWorkspace({
             setFrameCount(frameCountRef.current);
           }
         },
+        onOutput: pushOutput,
+        onInput: () => setAwaitingInput(true),
       });
 
       if (outcome.ok) {
@@ -156,21 +198,42 @@ export function EditorWorkspace({
       }
     } finally {
       liveFrameRef.current = null;
+      runIdRef.current = null;
       setFrameCount(frameCountRef.current);
+      setAwaitingInput(false);
       setIsRunning(false);
     }
-  }, [files, active.name, isRunning]);
+  }, [files, active.name, isRunning, pushOutput]);
+
+  const handleSubmitInput = useCallback(
+    async (value: string) => {
+      const runId = runIdRef.current;
+      if (!runId || isSendingInput) return;
+
+      setIsSendingInput(true);
+      setInputError(null);
+      setAwaitingInput(false);
+
+      const outcome = await sendRunInput(runId, value);
+      if (!outcome.ok) setInputError(outcome.message);
+
+      setIsSendingInput(false);
+    },
+    [isSendingInput],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
+        // Capture phase, and stopped here: Monaco binds Ctrl+Enter and would swallow the run.
+        event.stopPropagation();
         void handleRun();
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [handleRun]);
 
   const handleSelect = useCallback((name: string) => {
@@ -331,6 +394,9 @@ export function EditorWorkspace({
     setResult(null);
     setRunError(null);
     setFrameCount(0);
+    setInputError(null);
+    liveOutputRef.current = { stdout: "", stderr: "" };
+    setLiveOutput(liveOutputRef.current);
   }, []);
 
   const menus: MenuSpec[] = [
@@ -517,6 +583,11 @@ export function EditorWorkspace({
       error={runError}
       liveFrameRef={liveFrameRef}
       frameCount={frameCount}
+      liveOutput={liveOutput}
+      awaitingInput={awaitingInput}
+      inputError={inputError}
+      isSendingInput={isSendingInput}
+      onSubmitInput={(value) => void handleSubmitInput(value)}
     />
   );
 

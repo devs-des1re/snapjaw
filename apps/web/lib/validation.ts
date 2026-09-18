@@ -50,10 +50,15 @@ export type CreateSharedFileInput = z.infer<typeof createSharedFileSchema>;
 
 export const sharedFileIdSchema = z.uuid("That is not a valid shared file id.");
 
+export const RUN_ID_PATTERN = /^[a-f0-9]{32}$/;
+
+export const runIdSchema = z.string().regex(RUN_ID_PATTERN, "That is not a valid run id.");
+
 export const runRequestSchema = z
   .object({
     files: sharedFilesSchema,
     entryFile: z.string().min(1, "An entry file is required."),
+    runId: runIdSchema.optional(),
   })
   .refine((value) => Object.hasOwn(value.files, value.entryFile), {
     message: "The entry file must be one of the project's files.",
@@ -61,6 +66,15 @@ export const runRequestSchema = z
   });
 
 export type RunRequestInput = z.infer<typeof runRequestSchema>;
+
+export const MAX_INPUT_CHARACTERS = 4096;
+
+export const runInputSchema = z.object({
+  runId: runIdSchema,
+  value: z
+    .string()
+    .max(MAX_INPUT_CHARACTERS, `A line of input is limited to ${MAX_INPUT_CHARACTERS} characters.`),
+});
 
 export const runnerRunResultSchema = z.object({
   entryFile: z.string(),

@@ -19,6 +19,9 @@ RUN pip install --no-cache-dir "pillow==11.3.0"
 COPY snapjaw-exec.py /usr/local/bin/snapjaw-exec
 RUN chmod 0755 /usr/local/bin/snapjaw-exec
 
+# Put on the program's PYTHONPATH only: that is how the program gets input() and loses tkinter.
+COPY sitecustomize.py /opt/snapjaw/sitecustomize.py
+
 # Unprivileged; --read-only leaves the /tmp tmpfs as the only writable path.
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin sandbox
 
