@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 import menuIcon from "@iconify-icons/lucide/menu";
@@ -40,9 +41,17 @@ export function TopMenuBar({
   const wordmark = (
     <Link
       href="/"
-      className="mr-1 rounded-md text-xl font-semibold tracking-tight text-fg"
+      className="mr-1 flex items-center gap-2 rounded-md text-xl font-semibold tracking-tight text-fg"
       aria-label="Snapjaw home"
     >
+      <Image
+        src="/logo.png"
+        alt=""
+        width={28}
+        height={28}
+        priority
+        className="size-7 shrink-0 object-contain"
+      />
       Snapjaw
     </Link>
   );
