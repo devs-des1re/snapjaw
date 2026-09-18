@@ -25,6 +25,7 @@ function storedRow(overrides: Record<string, unknown> = {}) {
     files: VALID_BODY.files,
     entryFile: "main.py",
     fontSize: 18,
+    history: [],
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     deletedAt: null,
@@ -82,6 +83,7 @@ describe("POST /api/file — saving a project", () => {
       files: VALID_BODY.files,
       entryFile: "main.py",
       fontSize: 18,
+      history: [],
     });
   });
 
@@ -91,6 +93,42 @@ describe("POST /api/file — saving a project", () => {
     await POST(postRequest({ files: { "main.py": "" }, entryFile: "main.py" }));
 
     expect(createSharedFile).toHaveBeenCalledWith(expect.objectContaining({ fontSize: 14 }));
+  });
+
+  it("stores the supplied code history", async () => {
+    const history = [
+      {
+        files: { "main.py": "print(1)" },
+        entryFile: "main.py",
+        capturedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    createSharedFile.mockResolvedValue(storedRow({ history }));
+
+    const response = await POST(postRequest({ ...VALID_BODY, history }));
+
+    expect(response.status).toBe(201);
+    expect(createSharedFile).toHaveBeenCalledWith(expect.objectContaining({ history }));
+  });
+
+  it("rejects a history entry whose entry file is not in its files", async () => {
+    createSharedFile.mockResolvedValue(storedRow());
+
+    const response = await POST(
+      postRequest({
+        ...VALID_BODY,
+        history: [
+          {
+            files: { "a.py": "" },
+            entryFile: "b.py",
+            capturedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(createSharedFile).not.toHaveBeenCalled();
   });
 
   it.each([

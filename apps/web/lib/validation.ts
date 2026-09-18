@@ -6,6 +6,8 @@ export const MAX_SHARED_FILES = 20;
 export const MAX_FILE_NAME_LENGTH = 64;
 export const MAX_FILE_CHARACTERS = 128 * 1024;
 export const MAX_TOTAL_CHARACTERS = 512 * 1024;
+export const MAX_HISTORY_ENTRIES = 50;
+export const MAX_HISTORY_CHARACTERS = 1024 * 1024;
 
 const fileNameSchema = z
   .string()
@@ -30,6 +32,32 @@ export const sharedFilesSchema = z
     "Those files are too large to share.",
   );
 
+// An immutable snapshot: entry file plus the project as it looked at that moment.
+export const historyEntrySchema = z
+  .object({
+    files: sharedFilesSchema,
+    entryFile: z.string().min(1, "An entry file is required."),
+    capturedAt: z.string(),
+  })
+  .refine((entry) => Object.hasOwn(entry.files, entry.entryFile), {
+    message: "A history entry's entry file must be one of its files.",
+    path: ["entryFile"],
+  });
+
+export const historySchema = z
+  .array(historyEntrySchema)
+  .max(MAX_HISTORY_ENTRIES, `History is limited to ${MAX_HISTORY_ENTRIES} snapshots.`)
+  .refine(
+    (entries) =>
+      entries.reduce(
+        (total, entry) =>
+          total + Object.values(entry.files).reduce((sum, content) => sum + content.length, 0),
+        0,
+      ) <= MAX_HISTORY_CHARACTERS,
+    "That history is too large to share.",
+  )
+  .optional();
+
 export const createSharedFileSchema = z
   .object({
     files: sharedFilesSchema,
@@ -40,6 +68,7 @@ export const createSharedFileSchema = z
       .min(MIN_FONT_SIZE)
       .max(MAX_FONT_SIZE)
       .default(DEFAULT_FONT_SIZE),
+    history: historySchema,
   })
   .refine((value) => Object.hasOwn(value.files, value.entryFile), {
     message: "The entry file must be one of the shared files.",
@@ -47,6 +76,7 @@ export const createSharedFileSchema = z
   });
 
 export type CreateSharedFileInput = z.infer<typeof createSharedFileSchema>;
+export type HistoryEntry = z.infer<typeof historyEntrySchema>;
 
 export const sharedFileIdSchema = z.uuid("That is not a valid shared file id.");
 

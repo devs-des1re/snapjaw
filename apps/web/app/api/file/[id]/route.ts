@@ -31,6 +31,7 @@ export async function GET(
       files: record.files,
       entryFile: record.entryFile,
       fontSize: record.fontSize,
+      history: record.history,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     });

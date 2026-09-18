@@ -1,0 +1,1 @@
+ALTER TABLE "shared_files" ADD COLUMN "history" jsonb DEFAULT '[]'::jsonb NOT NULL;

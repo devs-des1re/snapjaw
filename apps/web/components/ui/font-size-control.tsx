@@ -5,6 +5,7 @@ import minusIcon from "@iconify-icons/lucide/minus";
 import plusIcon from "@iconify-icons/lucide/plus";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from "@/lib/project";
 
 export interface FontSizeControlProps {
@@ -12,6 +13,7 @@ export interface FontSizeControlProps {
   onChange: (next: number) => void;
   min?: number;
   max?: number;
+  className?: string;
 }
 
 export function FontSizeControl({
@@ -19,12 +21,13 @@ export function FontSizeControl({
   onChange,
   min = MIN_FONT_SIZE,
   max = MAX_FONT_SIZE,
+  className,
 }: FontSizeControlProps) {
   return (
     <div
       role="group"
       aria-label="Editor font size"
-      className="hidden items-center rounded-md border border-line bg-surface sm:flex"
+      className={cn("hidden items-center rounded-md border border-line bg-surface sm:flex", className)}
     >
       <Button
         variant="ghost"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { newRunId, projectToFileRecord } from "./run";
+import { appendOutput, newRunId, projectToFileRecord } from "./run";
 import { RUN_ID_PATTERN } from "./validation";
 
 describe("newRunId", () => {
@@ -35,5 +35,23 @@ describe("projectToFileRecord", () => {
 
   it("returns an empty record for an empty project", () => {
     expect(projectToFileRecord([])).toEqual({});
+  });
+});
+
+describe("appendOutput", () => {
+  it("keeps stdout and stderr in arrival order", () => {
+    let chunks = appendOutput([], { stream: "stdout", text: "one\n" });
+    chunks = appendOutput(chunks, { stream: "stderr", text: "bad\n" });
+    chunks = appendOutput(chunks, { stream: "stdout", text: "two\n" });
+
+    expect(chunks.map((chunk) => chunk.stream)).toEqual(["stdout", "stderr", "stdout"]);
+    expect(chunks.map((chunk) => chunk.text).join("")).toBe("one\nbad\ntwo\n");
+  });
+
+  it("merges consecutive chunks from the same stream", () => {
+    let chunks = appendOutput([], { stream: "stdout", text: "a" });
+    chunks = appendOutput(chunks, { stream: "stdout", text: "b" });
+
+    expect(chunks).toEqual([{ stream: "stdout", text: "ab" }]);
   });
 });

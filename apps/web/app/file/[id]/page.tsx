@@ -36,6 +36,7 @@ export default async function SharedFilePage({ params }: { params: Promise<{ id:
       initialFiles={project.files}
       initialActiveFile={project.activeFile}
       initialFontSize={record.fontSize}
+      history={record.history}
     />
   );
 }

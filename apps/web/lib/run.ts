@@ -24,13 +24,17 @@ export interface LiveOutput {
   text: string;
 }
 
-export interface OutputBuffer {
-  stdout: string;
-  stderr: string;
+// One ordered transcript, so a print after a failed line stays in the right place.
+export interface OutputChunk {
+  stream: "stdout" | "stderr";
+  text: string;
 }
+
+export type OutputBuffer = OutputChunk[];
 
 export interface StreamHandlers {
   runId?: string;
+  signal?: AbortSignal;
   onFrame?: (frame: LiveFrame) => void;
   onOutput?: (chunk: LiveOutput) => void;
   onInput?: (prompt: string) => void;
@@ -73,6 +77,16 @@ export function projectToFileRecord(files: readonly ProjectFile[]): Record<strin
   return Object.fromEntries(files.map((file) => [file.name, file.content]));
 }
 
+// Appends a chunk, merging it into the previous one when it is the same stream so the
+// transcript stays a short list rather than one entry per line.
+export function appendOutput(chunks: OutputBuffer, chunk: LiveOutput): OutputBuffer {
+  const last = chunks.at(-1);
+  if (last && last.stream === chunk.stream) {
+    return [...chunks.slice(0, -1), { stream: last.stream, text: last.text + chunk.text }];
+  }
+  return [...chunks, { stream: chunk.stream, text: chunk.text }];
+}
+
 // Newline-delimited JSON: frames arrive as they are drawn, the final result last.
 export async function runProjectStreaming(
   files: readonly ProjectFile[],
@@ -85,8 +99,10 @@ export async function runProjectStreaming(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ files: projectToFileRecord(files), entryFile, runId: handlers.runId }),
+      signal: handlers.signal,
     });
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) return { ok: false, message: "Run stopped." };
     return { ok: false, message: "Could not reach Snapjaw. Check your connection and try again." };
   }
 
@@ -179,7 +195,8 @@ export async function runProjectStreaming(
       }
     }
     handleLine(pending);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) return { ok: false, message: "Run stopped." };
     return { ok: false, message: "The connection to the sandbox was lost." };
   } finally {
     reader.releaseLock();
@@ -188,6 +205,10 @@ export async function runProjectStreaming(
   if (failure) return { ok: false, message: failure };
   if (!result) return { ok: false, message: "The sandbox returned an unexpected response." };
   return { ok: true, result };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 export type InputOutcome = { ok: true } | { ok: false; message: string };

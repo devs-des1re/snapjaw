@@ -35,16 +35,17 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("VALIDATION_ERROR", "Those files could not be shared.", details);
   }
 
-  const { files, entryFile, fontSize } = parsed.data;
+  const { files, entryFile, fontSize, history } = parsed.data;
 
   try {
-    const record = await createSharedFile({ files, entryFile, fontSize });
+    const record = await createSharedFile({ files, entryFile, fontSize, history: history ?? [] });
 
     log("info", "file created", {
       id: record.id,
       fileCount: Object.keys(files).length,
       characters: Object.values(files).reduce((total, content) => total + content.length, 0),
       maxCharacters: MAX_TOTAL_CHARACTERS,
+      historyEntries: record.history.length,
       durationMs: Date.now() - startedAt,
     });
 

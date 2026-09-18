@@ -4,12 +4,15 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost";
+export type ButtonVariant = "primary" | "success" | "danger" | "secondary" | "ghost";
 export type ButtonSize = "sm" | "md";
 
 // Flat by design: solid background or subtle border, never a shadow or glow.
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-fg font-medium hover:bg-accent-hover active:bg-accent-active",
+  success:
+    "bg-success text-success-fg font-medium hover:bg-success-hover active:bg-success-active",
+  danger: "bg-stop text-stop-fg font-medium hover:bg-stop-hover active:bg-stop-active",
   secondary: "border border-line-strong bg-surface text-fg hover:bg-elevated active:bg-panel",
   ghost: "text-fg-muted hover:bg-elevated hover:text-fg active:bg-panel",
 };

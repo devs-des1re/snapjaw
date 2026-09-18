@@ -11,6 +11,7 @@ import {
   type FileTabsHandle,
   type RenameOutcome,
 } from "@/components/blocks/file-tabs";
+import { HistoryDialog } from "@/components/blocks/history-dialog";
 import { OutputPanel } from "@/components/blocks/output-panel";
 import { ShareBar, type ShareState } from "@/components/blocks/share-bar";
 import { SplitPane, useIsNarrow } from "@/components/blocks/split-pane";
@@ -18,6 +19,11 @@ import { TopMenuBar } from "@/components/blocks/top-menu-bar";
 import { Dialog } from "@/components/ui/dialog";
 import type { MenuSpec } from "@/components/ui/menu";
 import { readApiError, readSharedUrl } from "@/lib/api/client";
+import {
+  captureHistory,
+  maybeCaptureHistory,
+  type HistorySnapshot,
+} from "@/lib/history";
 import {
   checkFileName,
   clampFontSize,
@@ -30,6 +36,7 @@ import {
   type ProjectFile,
 } from "@/lib/project";
 import {
+  appendOutput,
   newRunId,
   runProjectStreaming,
   sendRunInput,
@@ -38,6 +45,7 @@ import {
   type OutputBuffer,
   type RunResult,
 } from "@/lib/run";
+import { projectZip } from "@/lib/zip";
 
 // Monaco is browser-only, so the editor is loaded on the client.
 const EditorPanel = dynamic(
@@ -60,10 +68,12 @@ export interface EditorWorkspaceProps {
   initialFiles: ProjectFile[];
   initialActiveFile: string;
   initialFontSize: number;
+  history?: HistorySnapshot[];
 }
 
 const SHORTCUTS: Array<[string, string]> = [
   ["Ctrl + Enter", "Run the active file"],
+  ["Ctrl + Shift + H", "View the project's code history"],
   ["Ctrl + Z / Ctrl + Shift + Z", "Undo and redo"],
   ["Ctrl + /", "Toggle comment"],
   ["Ctrl + F / Ctrl + H", "Find and replace"],
@@ -77,12 +87,14 @@ export function EditorWorkspace({
   initialFiles,
   initialActiveFile,
   initialFontSize,
+  history: initialHistory = [],
 }: EditorWorkspaceProps) {
   const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
   const [activeFile, setActiveFile] = useState<string>(initialActiveFile);
   const [fontSize, setFontSize] = useState<number>(initialFontSize);
   const [result, setResult] = useState<RunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -91,11 +103,12 @@ export function EditorWorkspace({
   const [panelPosition, setPanelPosition] = useState<PanelPosition>("right");
   const [wordWrap, setWordWrap] = useState(false);
   const [minimap, setMinimap] = useState(false);
-  const [dialog, setDialog] = useState<"shortcuts" | null>(null);
-  const [liveOutput, setLiveOutput] = useState<OutputBuffer>({ stdout: "", stderr: "" });
+  const [dialog, setDialog] = useState<"shortcuts" | "history" | null>(null);
+  const [liveOutput, setLiveOutput] = useState<OutputBuffer>([]);
   const [awaitingInput, setAwaitingInput] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
   const [isSendingInput, setIsSendingInput] = useState(false);
+  const [history, setHistory] = useState<HistorySnapshot[]>(initialHistory);
 
   // Frames bypass React state: setState coalesced them and dropped most of the animation.
   const liveFrameRef = useRef<LiveFrame | null>(null);
@@ -103,9 +116,15 @@ export function EditorWorkspace({
   const lastFrameStatusAt = useRef(0);
 
   // Transcript text lands far more often than the console needs repainting.
-  const liveOutputRef = useRef<OutputBuffer>({ stdout: "", stderr: "" });
+  const liveOutputRef = useRef<OutputBuffer>([]);
   const lastOutputFlushAt = useRef(0);
   const runIdRef = useRef<string | null>(null);
+  const runAbortRef = useRef<AbortController | null>(null);
+  const stoppedRef = useRef(false);
+
+  // History state lives in refs too, so the capture effect does not re-run on every edit.
+  const historyRef = useRef<HistorySnapshot[]>(initialHistory);
+  const lastHistoryAtRef = useRef<number | null>(null);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
@@ -118,6 +137,27 @@ export function EditorWorkspace({
   // Side by side does not fit on a phone, so narrow screens always stack.
   const position: PanelPosition = narrow ? "bottom" : panelPosition;
   const sideBySide = position !== "bottom";
+
+  const commitHistory = useCallback(
+    (next: HistorySnapshot[], capturedAt: number) => {
+      historyRef.current = next;
+      lastHistoryAtRef.current = capturedAt;
+      setHistory(next);
+    },
+    [],
+  );
+
+  // Snapshots are taken at most every ten seconds, and only while the project changes.
+  useEffect(() => {
+    const captured = maybeCaptureHistory(
+      historyRef.current,
+      files,
+      active.name,
+      Date.now(),
+      lastHistoryAtRef.current,
+    );
+    if (captured) commitHistory(captured.history, captured.capturedAt);
+  }, [files, active.name, commitHistory]);
 
   useEffect(() => {
     const pane = editorPaneRef.current;
@@ -142,11 +182,7 @@ export function EditorWorkspace({
   }, []);
 
   const pushOutput = useCallback((chunk: LiveOutput) => {
-    const current = liveOutputRef.current;
-    liveOutputRef.current = {
-      stdout: chunk.stream === "stdout" ? current.stdout + chunk.text : current.stdout,
-      stderr: chunk.stream === "stderr" ? current.stderr + chunk.text : current.stderr,
-    };
+    liveOutputRef.current = appendOutput(liveOutputRef.current, chunk);
 
     const now = Date.now();
     if (now - lastOutputFlushAt.current >= 100) {
@@ -160,15 +196,20 @@ export function EditorWorkspace({
     setIsRunning(true);
     setRunError(null);
     setResult(null);
+    setStopped(false);
     setFrameCount(0);
     setInputError(null);
     setAwaitingInput(false);
     liveFrameRef.current = null;
     frameCountRef.current = 0;
     lastFrameStatusAt.current = 0;
-    liveOutputRef.current = { stdout: "", stderr: "" };
+    liveOutputRef.current = [];
     lastOutputFlushAt.current = 0;
     setLiveOutput(liveOutputRef.current);
+    stoppedRef.current = false;
+
+    const controller = new AbortController();
+    runAbortRef.current = controller;
 
     const runId = newRunId();
     runIdRef.current = runId;
@@ -176,6 +217,7 @@ export function EditorWorkspace({
     try {
       const outcome = await runProjectStreaming(files, active.name, {
         runId,
+        signal: controller.signal,
         onFrame: (frame) => {
           liveFrameRef.current = frame;
           frameCountRef.current += 1;
@@ -191,7 +233,10 @@ export function EditorWorkspace({
         onInput: () => setAwaitingInput(true),
       });
 
-      if (outcome.ok) {
+      // A run the user cancelled is not a failure, so only the transcript is kept.
+      if (stoppedRef.current) {
+        setStopped(true);
+      } else if (outcome.ok) {
         setResult(outcome.result);
       } else {
         setRunError(outcome.message);
@@ -199,11 +244,18 @@ export function EditorWorkspace({
     } finally {
       liveFrameRef.current = null;
       runIdRef.current = null;
+      runAbortRef.current = null;
       setFrameCount(frameCountRef.current);
       setAwaitingInput(false);
       setIsRunning(false);
     }
   }, [files, active.name, isRunning, pushOutput]);
+
+  const handleStop = useCallback(() => {
+    if (!runAbortRef.current) return;
+    stoppedRef.current = true;
+    runAbortRef.current.abort();
+  }, []);
 
   const handleSubmitInput = useCallback(
     async (value: string) => {
@@ -224,6 +276,12 @@ export function EditorWorkspace({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        setDialog("history");
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
         // Capture phase, and stopped here: Monaco binds Ctrl+Enter and would swallow the run.
@@ -317,6 +375,9 @@ export function EditorWorkspace({
     setIsSharing(true);
     setShare({ status: "sharing" });
 
+    const captured = captureHistory(historyRef.current, files, active.name, Date.now());
+    commitHistory(captured.history, captured.capturedAt);
+
     try {
       const response = await fetch("/api/file", {
         method: "POST",
@@ -325,6 +386,7 @@ export function EditorWorkspace({
           files: Object.fromEntries(files.map((file) => [file.name, file.content])),
           entryFile: active.name,
           fontSize,
+          history: captured.history,
         }),
       });
 
@@ -353,7 +415,7 @@ export function EditorWorkspace({
     } finally {
       setIsSharing(false);
     }
-  }, [files, active.name, fontSize, isSharing]);
+  }, [files, active.name, fontSize, isSharing, commitHistory]);
 
   const handleFontSizeChange = useCallback((next: number) => {
     setFontSize(clampFontSize(next));
@@ -371,6 +433,28 @@ export function EditorWorkspace({
     mounted.focus();
     void mounted.getAction(actionId)?.run();
   }, []);
+
+  const jumpToLine = useCallback(
+    (file: string, line: number) => {
+      const target = files.find((candidate) => candidate.name === file);
+      if (!target) {
+        setFileNotice(`No file named ${file} in this project.`);
+        return;
+      }
+
+      setActiveFile(file);
+      setFileNotice(null);
+
+      requestAnimationFrame(() => {
+        const mounted = editorRef.current;
+        if (!mounted) return;
+        mounted.focus();
+        mounted.revealLineInCenter(line);
+        mounted.setPosition({ lineNumber: line, column: 1 });
+      });
+    },
+    [files],
+  );
 
   const createFileFromMenu = useCallback(() => {
     const name = handleCreate();
@@ -390,12 +474,37 @@ export function EditorWorkspace({
     URL.revokeObjectURL(url);
   }, [active]);
 
+  const downloadProject = useCallback(() => {
+    const bytes = projectZip("snapjaw-project", files);
+    const blob = new Blob([bytes], { type: "application/zip" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "snapjaw-project.zip";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, [files]);
+
+  const loadVersion = useCallback(
+    (nextFiles: ProjectFile[], entryFile: string) => {
+      setFiles(nextFiles);
+      setActiveFile(entryFile || nextFiles[0]?.name || "");
+      setDialog(null);
+      setFileNotice(null);
+    },
+    [],
+  );
+
   const clearOutput = useCallback(() => {
     setResult(null);
     setRunError(null);
+    setStopped(false);
     setFrameCount(0);
     setInputError(null);
-    liveOutputRef.current = { stdout: "", stderr: "" };
+    liveOutputRef.current = [];
     setLiveOutput(liveOutputRef.current);
   }, []);
 
@@ -411,6 +520,7 @@ export function EditorWorkspace({
         },
         { kind: "separator" },
         { kind: "item", label: "Download this file", onSelect: downloadActiveFile },
+        { kind: "item", label: "Download project (.zip)", onSelect: downloadProject },
         { kind: "separator" },
         { kind: "item", label: "Share…", onSelect: () => void handleShare() },
       ],
@@ -538,11 +648,17 @@ export function EditorWorkspace({
           disabled: isRunning,
           onSelect: () => void handleRun(),
         },
+        {
+          kind: "item",
+          label: "Stop",
+          disabled: !isRunning,
+          onSelect: handleStop,
+        },
         { kind: "separator" },
         {
           kind: "item",
           label: "Clear output",
-          disabled: result === null && runError === null,
+          disabled: result === null && runError === null && !stopped,
           onSelect: clearOutput,
         },
       ],
@@ -551,6 +667,12 @@ export function EditorWorkspace({
       label: "Help",
       entries: [
         { kind: "item", label: "Keyboard shortcuts", onSelect: () => setDialog("shortcuts") },
+        {
+          kind: "item",
+          label: "Code history",
+          shortcut: "Ctrl+Shift+H",
+          onSelect: () => setDialog("history"),
+        },
       ],
     },
   ];
@@ -581,6 +703,7 @@ export function EditorWorkspace({
       isRunning={isRunning}
       entryFile={active.name}
       error={runError}
+      stopped={stopped}
       liveFrameRef={liveFrameRef}
       frameCount={frameCount}
       liveOutput={liveOutput}
@@ -588,6 +711,8 @@ export function EditorWorkspace({
       inputError={inputError}
       isSendingInput={isSendingInput}
       onSubmitInput={(value) => void handleSubmitInput(value)}
+      onClear={clearOutput}
+      onJumpToLine={jumpToLine}
     />
   );
 
@@ -600,6 +725,7 @@ export function EditorWorkspace({
         fontSize={fontSize}
         onFontSizeChange={handleFontSizeChange}
         onRun={() => void handleRun()}
+        onStop={handleStop}
         onShare={() => void handleShare()}
         isRunning={isRunning}
         isSharing={isSharing}
@@ -648,6 +774,13 @@ export function EditorWorkspace({
           ))}
         </dl>
       </Dialog>
+
+      <HistoryDialog
+        open={dialog === "history"}
+        history={history}
+        onClose={() => setDialog(null)}
+        onRestore={loadVersion}
+      />
     </div>
   );
 }

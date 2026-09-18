@@ -25,6 +25,17 @@
   --color-warn: #ffb454;
   --color-ok: #4cd48a;
 
+  /* Solid action buttons: Run is green, Stop is red. --color-danger stays the softer error text. */
+  --color-success: #16a34a;
+  --color-success-hover: #22c55e;
+  --color-success-active: #15803d;
+  --color-success-fg: #ffffff;
+
+  --color-stop: #dc2626;
+  --color-stop-hover: #ef4444;
+  --color-stop-active: #b91c1c;
+  --color-stop-fg: #ffffff;
+
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 

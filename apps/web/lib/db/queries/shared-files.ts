@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
-import { sharedFiles, type SharedFileRow } from "@/lib/db/schema";
+import { sharedFiles, type HistorySnapshot, type SharedFileRow } from "@/lib/db/schema";
 
 export type SharedFileRecord = SharedFileRow;
 
@@ -9,6 +9,7 @@ export interface CreateSharedFileInput {
   files: Record<string, string>;
   entryFile: string;
   fontSize: number;
+  history: HistorySnapshot[];
 }
 
 export async function createSharedFile(input: CreateSharedFileInput): Promise<SharedFileRecord> {

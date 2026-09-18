@@ -1,11 +1,18 @@
 import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 // Immutable snapshots; deletes are soft, so reads filter `deleted_at IS NULL`.
+export type HistorySnapshot = {
+  files: Record<string, string>;
+  entryFile: string;
+  capturedAt: string;
+};
+
 export const sharedFiles = pgTable("shared_files", {
   id: uuid("id").primaryKey().defaultRandom(),
   files: jsonb("files").$type<Record<string, string>>().notNull(),
   entryFile: text("entry_file").notNull(),
   fontSize: integer("font_size").notNull().default(14),
+  history: jsonb("history").$type<HistorySnapshot[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
