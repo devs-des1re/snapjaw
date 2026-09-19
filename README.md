@@ -106,6 +106,10 @@ A few things worth knowing before running this for real:
   exposed publicly and only the unprivileged, networkless containers it spawns touch untrusted code.
 - Size the host for the pool: each sandbox is capped by `SANDBOX_MEMORY` (default `256m`) and the
   pool holds `SANDBOX_POOL_SIZE` of them (default `3`).
+- The runner service is tagged `snapjaw-sandbox-runner`, deliberately distinct from the pool image
+  `snapjaw-runner`. Do not let the two tags collide: if the runner service were built as
+  `snapjaw-runner`, it would overwrite the pool image and every sandbox would start running the
+  runner instead of Python, failing with "container ... is not running".
 - One runner per Docker host — it prunes containers by its own name prefix on startup, so two
   runners would fight over the same pool.
 - A hard-killed runner can leave idle sandbox containers behind. They cost nothing (`sleep

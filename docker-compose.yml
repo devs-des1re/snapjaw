@@ -52,6 +52,10 @@ services:
     build:
       context: .
       dockerfile: services/sandbox-runner/Dockerfile
+    # Tagged explicitly: the default project/service name would be "snapjaw-runner",
+    # which is the sandbox pool image's tag — building this service would overwrite it,
+    # leaving pool containers that run the runner instead of the Python sandbox.
+    image: snapjaw-sandbox-runner:latest
     restart: unless-stopped
     environment:
       SANDBOX_RUNNER_PORT: "4000"
