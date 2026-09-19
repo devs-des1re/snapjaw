@@ -74,18 +74,27 @@ time, which would hardcode one environment's URL into every deploy.
 
 ## Deploying
 
-`docker-compose.yml` currently runs two services: Caddy in front for automatic HTTPS, and the web
-app behind it. Postgres and the sandbox runner aren't wired into compose yet — until they're added
-back, sharing and Run will fail cleanly with a "service unavailable" error rather than crashing.
+`docker-compose.yml` runs the full stack: Caddy for automatic HTTPS, the web app, the sandbox
+runner, and Postgres. A one-shot `migrate` service applies the schema before the web app starts.
 
 ```bash
 cp apps/web/.env.example apps/web/.env
+# edit apps/web/.env: set APP_URL to your public origin
+# change the domain in Caddyfile too — it is set to snapjaw.dev
+
+# The runner spawns sandboxes from this image, so it must exist on the host daemon.
+docker build -t snapjaw-runner:latest services/sandbox-runner/runner-image
+
 docker compose up -d --build
 ```
 
-Change the domain in `Caddyfile` to your own — it is set to `snapjaw.dev`. The web container
-publishes no ports itself; Caddy is the only thing facing the internet and reaches it internally
-as `web:3000`.
+Point the domain's DNS A record at the host before starting; Caddy only issues a certificate once
+it can reach the challenge. The web container publishes no ports itself; Caddy is the only thing
+facing the internet and reaches it internally as `web:3000`.
+
+Postgres credentials and the optional runner token come from shell variables (`POSTGRES_USER`,
+`POSTGRES_PASSWORD`, `POSTGRES_DB`, `SANDBOX_RUNNER_TOKEN`) with development defaults. Set them in a
+root `.env` next to `docker-compose.yml` before going live — the defaults are not secrets.
 
 A few things worth knowing before running this for real:
 
@@ -93,12 +102,15 @@ A few things worth knowing before running this for real:
   failure.
 - `Caddyfile` sets `flush_interval -1` on the proxy so the live run stream isn't buffered. Don't
   remove it.
+- The runner mounts the host's Docker socket, which is effectively root on the host. It is never
+  exposed publicly and only the unprivileged, networkless containers it spawns touch untrusted code.
+- Size the host for the pool: each sandbox is capped by `SANDBOX_MEMORY` (default `256m`) and the
+  pool holds `SANDBOX_POOL_SIZE` of them (default `3`).
 - One runner per Docker host — it prunes containers by its own name prefix on startup, so two
   runners would fight over the same pool.
 - A hard-killed runner can leave idle sandbox containers behind. They cost nothing (`sleep
-infinity`) and get swept on the next runner startup.
-- Back up the `postgres-data` volume once Postgres is back in the compose file — shares live there
-  and nowhere else.
+  infinity`) and get swept on the next runner startup.
+- Back up the `postgres-data` volume — shares live there and nowhere else.
 
 ## API
 

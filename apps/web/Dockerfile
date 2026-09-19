@@ -41,6 +41,8 @@ RUN groupadd --system --gid 1001 nodejs \
 # Standalone output mirrors the workspace, so the server entry is nested under apps/web.
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/static ./apps/web/.next/static
+# Standalone does not bundle public/, so static assets have to be copied across by hand.
+COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/public ./apps/web/public
 
 USER nextjs
 EXPOSE 3000

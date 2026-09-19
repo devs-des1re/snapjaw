@@ -22,7 +22,69 @@ services:
     restart: unless-stopped
     env_file:
       - ./apps/web/.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-snapjaw}:${POSTGRES_PASSWORD:-snapjaw}@postgres:5432/${POSTGRES_DB:-snapjaw}
+      SANDBOX_RUNNER_URL: http://runner:4000
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      runner:
+        condition: service_started
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: migrator
+    env_file:
+      - ./apps/web/.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-snapjaw}:${POSTGRES_PASSWORD:-snapjaw}@postgres:5432/${POSTGRES_DB:-snapjaw}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  runner:
+    build:
+      context: .
+      dockerfile: services/sandbox-runner/Dockerfile
+    restart: unless-stopped
+    environment:
+      SANDBOX_RUNNER_PORT: "4000"
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-snapjaw-runner:latest}
+      SANDBOX_POOL_SIZE: ${SANDBOX_POOL_SIZE:-3}
+      SANDBOX_TIMEOUT_MS: ${SANDBOX_TIMEOUT_MS:-10000}
+      SANDBOX_MEMORY: ${SANDBOX_MEMORY:-256m}
+      SANDBOX_CPUS: ${SANDBOX_CPUS:-1}
+      SANDBOX_STREAM_FPS: ${SANDBOX_STREAM_FPS:-60}
+      SANDBOX_STREAM_QUALITY: ${SANDBOX_STREAM_QUALITY:-60}
+      SANDBOX_STREAM_WIDTH: ${SANDBOX_STREAM_WIDTH:-800}
+      SANDBOX_STABLE_MS: ${SANDBOX_STABLE_MS:-600}
+    volumes:
+      # The runner drives the host daemon to spawn its pool, rather than nesting Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-snapjaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-snapjaw}
+      POSTGRES_DB: ${POSTGRES_DB:-snapjaw}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   caddy_data:
   caddy_config:
+  postgres-data:
