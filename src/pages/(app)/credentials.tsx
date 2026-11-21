@@ -176,7 +176,7 @@ export default function Credentials() {
               <Input id="smtp-senders" name="senders" type="text" placeholder="hello@example.com, @team.example.com" required class="mono" />
             </Field>
             <Field label="Recipients per hour" for="smtp-rate" hint="0 means no limit.">
-              <Input id="smtp-rate" name="rate" type="number" defaultValue="100" />
+              <input id="smtp-rate" name="rate" type="number" defaultValue="100" />
             </Field>
             <div class="form-actions"><Button type="submit" variant="primary">Create login</Button></div>
           </form>
@@ -216,7 +216,7 @@ export default function Credentials() {
               <Input id="key-senders" name="senders" type="text" placeholder="billing@example.com" required class="mono" />
             </Field>
             <Field label="Recipients per hour" for="key-rate" hint="0 means no limit.">
-              <Input id="key-rate" name="rate" type="number" defaultValue="100" />
+              <input id="key-rate" name="rate" type="number" defaultValue="100" />
             </Field>
             <div class="form-actions"><Button type="submit" variant="primary">Create key</Button></div>
           </form>

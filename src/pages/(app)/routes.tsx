@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onMount } from "@krate/runtime";
-import { Button, Input } from "@krate/components";
+import { Button } from "@krate/components";
 import { PageHeader, Section } from "../../../components/ui/page";
 import { Field, Notice } from "../../../components/ui/form";
 import { Table, Empty } from "../../../components/ui/table";
