@@ -112,6 +112,13 @@ CREATE TABLE `domain` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `domain_resendId_unique` ON `domain` (`resendId`);--> statement-breakpoint
 CREATE UNIQUE INDEX `domain_name_unique` ON `domain` (`name`);--> statement-breakpoint
+CREATE TABLE `idempotencyKey` (
+	`key` text PRIMARY KEY NOT NULL,
+	`messageId` text NOT NULL,
+	`bodyHash` text NOT NULL,
+	`createdAt` integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `invite` (
 	`id` text PRIMARY KEY NOT NULL,
 	`email` text NOT NULL,

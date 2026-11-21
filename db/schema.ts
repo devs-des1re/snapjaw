@@ -243,6 +243,13 @@ export const usage = sqliteTable("usage", {
   alertedAt: integer("alertedAt", { mode: "timestamp_ms" }),
 });
 
+export const idempotencyKeys = sqliteTable("idempotencyKey", {
+  key: text("key").primaryKey(),
+  messageId: text("messageId").notNull(),
+  bodyHash: text("bodyHash").notNull(),
+  createdAt: createdAt(),
+});
+
 export const oauthStates = sqliteTable("oauthState", {
   state: text("state").primaryKey(),
   destinationId: text("destinationId").notNull(),
