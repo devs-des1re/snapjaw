@@ -1,4 +1,5 @@
 FROM node:22-bookworm-slim AS build
+RUN apt-get update \n    && apt-get install -y --no-install-recommends ca-certificates \n    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
