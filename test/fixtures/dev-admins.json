@@ -1,0 +1,4 @@
+{
+  "owner": { "email": "owner@snapjaw.test", "name": "Local Owner", "password": "local-owner-password-1" },
+  "admin": { "email": "admin@snapjaw.test", "name": "Local Admin", "password": "local-admin-password-1" }
+}
