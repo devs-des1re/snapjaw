@@ -81,3 +81,11 @@ The image runs as the `node` user and listens on 2587 and 2465. Compose maps hos
 ## D20. Login rate limits live in memory
 
 `@krate/auth` keeps sign-in and two-factor counters per process. Snapjaw runs one process, so that is enough. A multi-instance setup would need a shared limiter, which is out of scope.
+
+## D21. The compatibility API answers in Resend's shape
+
+`POST /api/emails` and `GET /api/emails/{id}` return Resend's bare JSON (`{ "id": ... }` and `{ statusCode, name, message }` for errors) instead of Snapjaw's usual envelope, so the official Resend SDKs work unchanged. The responses still go through `src/api/_http.ts`, through `resendCompat` and `resendCompatError`. Request bodies are turned into MIME and pass through the same checks as SMTP submissions.
+
+## D22. Bcc-only messages are addressed to the sender
+
+Resend needs a To address. When a message has no To header, Snapjaw sets To to the sender rather than promoting a Bcc recipient, which would expose that address to everyone else. The sender's copy counts as one more unit of quota.
