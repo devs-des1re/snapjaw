@@ -44,6 +44,7 @@
     "otpauth": "^9.6.0",
     "preact": "^11.2.0",
     "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
     "smtp-server": "^3.21.7",
     "svix": "^2.11.0"
   },
