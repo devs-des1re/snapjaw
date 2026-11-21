@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.krate/
+data/
+.env
+.env.local
+.env.*.local
+src/krate-env.d.ts
+src/krate-content.d.ts
+*.log
+coverage/
+.DS_Store
+.idea/
+.vscode/

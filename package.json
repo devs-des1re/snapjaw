@@ -1,0 +1,66 @@
+{
+  "name": "snapjaw",
+  "version": "0.1.0",
+  "description": "Self-hosted email relay between Resend and the mail clients you already use.",
+  "license": "MIT",
+  "author": "Arjun Patel",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devs-des1re/snapjaw.git"
+  },
+  "bin": {
+    "snapjaw": "./bin/snapjaw.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "krate dev",
+    "build": "krate deploy --target node && npm run build:cli",
+    "start": "node dist/.krate/server/server.mjs",
+    "typecheck": "krate typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "cli": "tsx cli/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "build:cli": "esbuild cli/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/cli.mjs"
+  },
+  "dependencies": {
+    "@krate/auth": "0.5.0-rc.10",
+    "@krate/components": "0.5.0-rc.10",
+    "@krate/core": "0.5.0-rc.10",
+    "@krate/runtime": "0.5.0-rc.10",
+    "@libsql/client": "^0.18.0",
+    "@node-rs/argon2": "^2.2.2",
+    "@prometheus-io/client": "^0.16.1",
+    "acme-client": "^5.4.0",
+    "drizzle-orm": "^0.45.4",
+    "googleapis": "^190.0.0",
+    "imapflow": "^2.12.2",
+    "mailparser": "^3.15.0",
+    "nodemailer": "^10.6.1",
+    "otpauth": "^9.6.0",
+    "preact": "^11.2.0",
+    "qrcode": "^1.5.4",
+    "smtp-server": "^3.21.7",
+    "svix": "^2.11.0"
+  },
+  "devDependencies": {
+    "@krate/ts-plugin": "^0.5.0-rc.10",
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/smtp-server": "^3.5.13",
+    "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.15.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.1"
+  }
+}

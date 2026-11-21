@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "@krate/runtime",
+    "allowArbitraryExtensions": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "types": ["node"],
+    "plugins": [{ "name": "@krate/ts-plugin" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "server", "db", "lib", "components", "cli", "test", "middleware.ts", "krate.config.ts", "drizzle.config.ts", "vitest.config.ts", ".krate/types"]
+}
