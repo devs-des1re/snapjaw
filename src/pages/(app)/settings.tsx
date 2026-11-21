@@ -4,10 +4,12 @@ import { PageHeader, Section } from "../../../components/ui/page";
 import { Field, Notice } from "../../../components/ui/form";
 import { Status } from "../../../components/ui/status";
 import { ValueBlock } from "../../../components/ui/copy";
+import { Table, Empty } from "../../../components/ui/table";
 import { api, fillForm, formData, formatDate, formatRelative } from "../../../lib/client";
 
 type Setting = { value: string; secret: boolean; set: boolean };
 type Tls = { source: string; subject: string; issuer: string; validTo: string; names: string; matchesHost: boolean; daysLeft: number };
+type Check = { name: string; status: "ok" | "warn" | "fail"; detail: string; fix?: string };
 type Data = {
   settings: Record<string, Setting>;
   webhookUrl: string;
@@ -24,6 +26,16 @@ export default function Settings() {
   const [data, setData] = createSignal<Data | null>(null);
   const [message, setMessage] = createSignal("");
   const [error, setError] = createSignal("");
+  const [checks, setChecks] = createSignal<Check[]>([]);
+  const [running, setRunning] = createSignal(false);
+
+  async function runChecks() {
+    setRunning(true);
+    const result = await api.post<Check[]>("/api/doctor");
+    setRunning(false);
+    if (result.ok) setChecks(result.data);
+    else setError(result.error);
+  }
 
   async function load() {
     const result = await api.get<Data>("/api/settings");
@@ -179,6 +191,9 @@ export default function Settings() {
               <input id="alerts-from" name="alerts.from" type="text" placeholder="Snapjaw <alerts@example.com>" />
             </Field>
           </div>
+          <Field label="Alert after this many failures in an hour" for="alerts-threshold">
+            <input id="alerts-threshold" name="alerts.failureThreshold" type="number" min="1" />
+          </Field>
           <div class="form-actions"><Button type="submit" variant="primary">Save alerts</Button></div>
         </form>
       </Section>
@@ -227,6 +242,26 @@ export default function Settings() {
           <dd>{data()?.acme.enabled ? (data()?.acme.lastError ? `On, last attempt failed: ${data()?.acme.lastError}` : "On") : "Off"}</dd>
         </dl>
       </section>
+
+      <Section title="Health checks" description="The same checks as snapjaw doctor: DNS records, TLS, Resend, the webhook, SMTP ports and destinations.">
+        <div class="form-actions"><Button variant="secondary" onClick={() => runChecks()} disabled={running()}>{running() ? "Checking" : "Run checks"}</Button></div>
+        <Table label="Health checks">
+          <thead>
+            <tr><th>Check</th><th>Result</th><th>Detail</th><th>Fix</th></tr>
+          </thead>
+          <tbody>
+            {checks().map((check) => (
+              <tr key={check.name}>
+                <td>{check.name}</td>
+                <td><Status value={check.status} tone={check.status === "ok" ? "good" : check.status === "warn" ? "wait" : "bad"} /></td>
+                <td class="small">{check.detail}</td>
+                <td class="small muted">{check.status === "ok" ? "" : check.fix ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+        <Empty title="Not run yet" hidden={checks().length > 0}>Press Run checks. It can take a few seconds.</Empty>
+      </Section>
     </>
   );
 }

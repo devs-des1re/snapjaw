@@ -21,6 +21,7 @@ The admin UI is static Krate pages that fetch from the REST API under `src/api`.
 - **List rows read only row data.** Inside `items().map(...)`, do not read signals or memos, and do not render `@krate/components` such as `Button`. Rows that do that render empty after an update. Compute per-row flags when the data loads (for example `manageable`) and use `RowButton` from `components/ui/button`.
 - **Dynamic tables use `components/ui/table`.** Krate's `Table.Body` does not re-render children that come from a signal.
 - **Capture the form before `await`.** `event.currentTarget` is `null` after the first `await` in a submit handler. Read it into a variable first.
+- **No reactive Krate components in JSX props.** A `<Button>` with signal text passed as a prop such as `actions={...}` renders empty. Put it in the children instead.
 - **Icons use `<Icon name="set:icon" />`.** The prop is `name`. Wrap an icon in `<span hidden={...}>` to toggle it.
 
 ## Backend rules
