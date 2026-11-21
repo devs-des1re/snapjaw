@@ -66,3 +66,26 @@ export function formatBytes(bytes: number | null | undefined): string {
   }
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function queryParam(name: string): string {
+  return new URLSearchParams(window.location.search).get(name) ?? "";
+}
+
+export function fillForm(root: ParentNode, values: Record<string, string | boolean | number | null | undefined>) {
+  for (const [name, value] of Object.entries(values)) {
+    const field = root.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${CSS.escape(name)}"]`);
+    if (!field) continue;
+    if (field instanceof HTMLInputElement && field.type === "checkbox") field.checked = value === true || value === "true";
+    else if (field instanceof HTMLInputElement && field.type === "password") continue;
+    else field.value = value === null || value === undefined ? "" : String(value);
+  }
+}
