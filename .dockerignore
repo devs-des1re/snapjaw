@@ -1,0 +1,12 @@
+node_modules
+dist
+.krate
+data
+.env
+.env.*
+!.env.example
+.git
+coverage
+*.log
+test
+docs

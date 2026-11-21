@@ -1,0 +1,31 @@
+services:
+  snapjaw:
+    image: ghcr.io/devs-des1re/snapjaw:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      SNAPJAW_TRUST_PROXY: "true"
+    expose:
+      - "3000"
+    ports:
+      - "587:2587"
+      - "465:2465"
+    volumes:
+      - snapjaw-data:/data
+      - ./certs:/certs:ro
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.snapjaw.rule=Host(`${SNAPJAW_DOMAIN}`)
+      - traefik.http.routers.snapjaw.entrypoints=websecure
+      - traefik.http.routers.snapjaw.tls.certresolver=letsencrypt
+      - traefik.http.services.snapjaw.loadbalancer.server.port=3000
+
+volumes:
+  snapjaw-data:
+
+networks:
+  dokploy-network:
+    external: true

@@ -1,0 +1,19 @@
+services:
+  snapjaw:
+    image: ghcr.io/devs-des1re/snapjaw:latest
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+      - "587:2587"
+      - "465:2465"
+    volumes:
+      - snapjaw-data:/data
+      - ./certs:/certs:ro
+
+volumes:
+  snapjaw-data:
