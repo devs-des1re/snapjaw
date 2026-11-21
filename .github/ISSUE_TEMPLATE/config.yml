@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/devs-des1re/snapjaw/blob/main/SECURITY.md
+    about: Email security problems privately instead of opening an issue.
+  - name: Self-hosting guide
+    url: https://github.com/devs-des1re/snapjaw/blob/main/docs/self-hosting.md
+    about: Setup, TLS, DNS, backups and upgrades.
+  - name: Gmail setup guide
+    url: https://github.com/devs-des1re/snapjaw/blob/main/docs/gmail.md
+    about: Send mail as, Gmail API import and IMAP.

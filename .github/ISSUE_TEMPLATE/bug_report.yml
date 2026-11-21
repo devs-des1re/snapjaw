@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in Snapjaw does not work as documented.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do not include passwords, API keys, OAuth tokens or message contents.
+        For security problems, email me@devs-des1re.com instead of opening an issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the problem.
+      placeholder: |
+        1. Open Destinations
+        2. Add an IMAP destination
+        3. Press Test
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Outbound (SMTP or API)
+        - Inbound (webhook, routes, destinations)
+        - Gmail
+        - Domains and DNS
+        - Admin UI
+        - Accounts, 2FA and audit log
+        - Docker and deployment
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Snapjaw version
+      description: The image tag or commit you run.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of snapjaw doctor
+      description: Run docker compose exec snapjaw snapjaw doctor and paste the result. Remove anything private.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From docker compose logs snapjaw. Remove addresses you do not want to share.
+      render: text

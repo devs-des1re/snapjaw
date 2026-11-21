@@ -1,0 +1,26 @@
+name: Question
+description: Ask how to set up or use Snapjaw.
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the self-hosting guide and the Gmail setup guide in the docs folder first. Running snapjaw doctor often points at the answer.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do you want to know?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: Steps you took and what happened.
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: How you run Snapjaw (Docker Compose, Dokploy, reverse proxy) and the version.
